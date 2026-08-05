@@ -1,0 +1,11 @@
+# Rust target dir
+/target
+
+# Agent 
+/agy
+
+# User tests
+/user
+
+# VSCode
+.vscode/
