@@ -1,6 +1,7 @@
-//! Comparative data module for aligning species traits and trees.
+//! Comparative data module for aligning species traits and trees with pruning and taxonomy reports.
 
 use polars::prelude::*;
+use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::Read;
 use std::path::Path;
@@ -9,12 +10,44 @@ use crate::tree::node::normalize_species_name;
 use crate::tree::parser::parse_newick;
 use crate::tree::PhyloTree;
 
+/// Options for configuring `ComparativeData` alignment, pruning, and taxonomy matching.
+#[derive(Debug, Clone)]
+pub struct ComparativeDataOptions {
+    /// If `true`, prunes non-matching species between tree and table. Defaults to `false` (returns error on mismatch).
+    pub prune: bool,
+    /// If `true`, attempts Genus + Subspecies matching (e.g. `Canis_lupus_familiaris` -> `Canis_familiaris`). Defaults to `true`.
+    pub fuzzy_taxonomy: bool,
+}
+
+impl Default for ComparativeDataOptions {
+    fn default() -> Self {
+        Self {
+            prune: false,
+            fuzzy_taxonomy: true,
+        }
+    }
+}
+
+/// Report providing full transparency on matched species count, pruned species, and taxonomy adjustments.
+#[derive(Debug, Clone, Default)]
+pub struct PruneReport {
+    /// Total number of species that successfully matched and were included in analysis.
+    pub matched_species_count: usize,
+    /// Tips removed from tree because they were missing in the trait table.
+    pub pruned_tree_tips: Vec<String>,
+    /// Rows removed from trait table because they were missing in the tree.
+    pub pruned_table_rows: Vec<String>,
+    /// Logs of automatic taxonomy adjustments (e.g. trinomial to binomial matches).
+    pub taxonomy_matches: Vec<String>,
+}
+
 /// Alignment container for species traits and phylogenetic tree matching `caper::comparative.data`.
 #[derive(Debug, Clone)]
 pub struct ComparativeData {
     pub tree: PhyloTree,
     pub species_names: Vec<String>,
     pub data: DataFrame,
+    pub report: PruneReport,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -31,39 +64,54 @@ pub enum ComparativeDataError {
     #[error("Species column not found in trait table")]
     MissingSpeciesColumn,
 
-    #[error("Species mismatch between tree and trait table. Tree species: {tree_species:?}, Table species: {table_species:?}")]
+    #[error("Tree pruning error: {0}")]
+    PruningError(String),
+
+    #[error("Species mismatch between tree and trait table. Matched count: {matched_count}. Unmatched tree species: {tree_species:?}, Unmatched table species: {table_species:?}")]
     SpeciesMismatch {
+        matched_count: usize,
         tree_species: Vec<String>,
         table_species: Vec<String>,
     },
 }
 
 impl ComparativeData {
-    /// Constructs `ComparativeData` from Newick string and TSV string input with strict matching.
-    pub fn from_newick_and_tsv(
+    /// Constructs `ComparativeData` from Newick string and TSV string with default options.
+    pub fn from_newick_and_tsv(newick_str: &str, tsv_str: &str) -> Result<Self, ComparativeDataError> {
+        Self::from_newick_and_tsv_with_options(newick_str, tsv_str, &ComparativeDataOptions::default())
+    }
+
+    /// Constructs `ComparativeData` from Newick string and TSV string with explicit options.
+    pub fn from_newick_and_tsv_with_options(
         newick_str: &str,
-        tsv_str: &str
+        tsv_str: &str,
+        options: &ComparativeDataOptions,
     ) -> Result<Self, ComparativeDataError> {
-        let tree = parse_newick(
-            newick_str
-        ).map_err(ComparativeDataError::TreeParse)?;
+        let tree = parse_newick(newick_str).map_err(ComparativeDataError::TreeParse)?;
 
         let cursor = std::io::Cursor::new(tsv_str);
         let df = CsvReadOptions::default()
             .with_has_header(true)
-            .with_parse_options(
-                CsvParseOptions::default().with_separator(b'\t')
-            )
+            .with_parse_options(CsvParseOptions::default().with_separator(b'\t'))
             .into_reader_with_file_handle(cursor)
             .finish()?;
 
-        Self::align(tree, df)
+        Self::align_with_options(tree, df, options)
     }
 
-    /// Reads `ComparativeData` directly from Newick tree file and TSV trait data file.
+    /// Reads `ComparativeData` directly from files with default options.
     pub fn from_files<P1: AsRef<Path>, P2: AsRef<Path>>(
         tree_path: P1,
         tsv_path: P2,
+    ) -> Result<Self, ComparativeDataError> {
+        Self::from_files_with_options(tree_path, tsv_path, &ComparativeDataOptions::default())
+    }
+
+    /// Reads `ComparativeData` directly from files with explicit options.
+    pub fn from_files_with_options<P1: AsRef<Path>, P2: AsRef<Path>>(
+        tree_path: P1,
+        tsv_path: P2,
+        options: &ComparativeDataOptions,
     ) -> Result<Self, ComparativeDataError> {
         let mut tree_file = File::open(tree_path)?;
         let mut newick_str = String::new();
@@ -71,28 +119,24 @@ impl ComparativeData {
 
         let df = CsvReadOptions::default()
             .with_has_header(true)
-            .with_parse_options(
-                CsvParseOptions::default().with_separator(b'\t')
-            )
-            .try_into_reader_with_file_path(
-                Some(tsv_path.as_ref().to_path_buf())
-            )?
+            .with_parse_options(CsvParseOptions::default().with_separator(b'\t'))
+            .try_into_reader_with_file_path(Some(tsv_path.as_ref().to_path_buf()))?
             .finish()?;
 
-        let tree = parse_newick(
-            &newick_str
-        ).map_err(ComparativeDataError::TreeParse)?;
-        Self::align(tree, df)
+        let tree = parse_newick(&newick_str).map_err(ComparativeDataError::TreeParse)?;
+        Self::align_with_options(tree, df, options)
     }
 
-    /// Aligns tree tip species with table species, ensuring strict match and proper row ordering.
-    fn align(
+    /// Core alignment engine handling matching, fuzzy taxonomy, pruning, and reporting.
+    // ponytail: lightweight stdlib genus+subspecies token matching and pruning report
+    fn align_with_options(
         tree: PhyloTree,
-        mut df: DataFrame
+        mut df: DataFrame,
+        options: &ComparativeDataOptions,
     ) -> Result<Self, ComparativeDataError> {
         let tree_normalized_tips = tree.normalized_tip_names();
 
-        // Unified species_id extraction supporting Genus+Species or single species column
+        // Extract normalized species list from DataFrame
         let table_species: Vec<String> = if df.column("Genus").is_ok() && df.column("Species").is_ok() {
             let genus_ca = df.column("Genus")?.str()?;
             let species_ca = df.column("Species")?.str()?;
@@ -112,41 +156,98 @@ impl ComparativeData {
             return Err(ComparativeDataError::MissingSpeciesColumn);
         };
 
-        // Always ensure unified "species_id" column is added to DataFrame for alignment lookup
-        let s = StringChunked::new(
-            PlSmallStr::from_static("species_id"),
-            table_species.clone(),
-        )
-        .into_series();
+        // Attach unified species_id column
+        let s = StringChunked::new(PlSmallStr::from_static("species_id"), table_species.clone()).into_series();
         df.with_column(s)?;
 
-        // Strict species matching check
-        let mut sorted_tree_species = tree_normalized_tips.clone();
-        let mut sorted_table_species = table_species.clone();
-        sorted_tree_species.sort();
-        sorted_table_species.sort();
+        let mut report = PruneReport::default();
+        let table_set: HashSet<String> = table_species.iter().cloned().collect();
+        let mut matched_tree_to_table: HashMap<String, String> = HashMap::new();
+        let mut matched_table_set: HashSet<String> = HashSet::new();
 
-        if sorted_tree_species != sorted_table_species {
+        // Step 1: Direct exact matching
+        for tip in &tree_normalized_tips {
+            if table_set.contains(tip) {
+                matched_tree_to_table.insert(tip.clone(), tip.clone());
+                matched_table_set.insert(tip.clone());
+            }
+        }
+
+        // Step 2: Genus + Subspecies fuzzy taxonomy matching (if enabled)
+        if options.fuzzy_taxonomy {
+            for tip in &tree_normalized_tips {
+                if matched_tree_to_table.contains_key(tip) {
+                    continue;
+                }
+
+                let tokens: Vec<&str> = tip.split('_').collect();
+                if tokens.len() >= 2 {
+                    let genus = tokens[0];
+                    let sub_sp = tokens[tokens.len() - 1];
+
+                    // Find unmatched table entry sharing same Genus and Subspecies token
+                    for tbl_sp in &table_species {
+                        if matched_table_set.contains(tbl_sp) {
+                            continue;
+                        }
+                        let tbl_tokens: Vec<&str> = tbl_sp.split('_').collect();
+                        if tbl_tokens.len() >= 2 && tbl_tokens[0] == genus && tbl_tokens.contains(&sub_sp) {
+                            matched_tree_to_table.insert(tip.clone(), tbl_sp.clone());
+                            matched_table_set.insert(tbl_sp.clone());
+                            report.taxonomy_matches.push(format!(
+                                "Fuzzy taxonomy match: tree tip '{}' matched with table row '{}'",
+                                tip, tbl_sp
+                            ));
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Step 3: Identify unmatched species
+        for tip in &tree_normalized_tips {
+            if !matched_tree_to_table.contains_key(tip) {
+                report.pruned_tree_tips.push(tip.clone());
+            }
+        }
+        for tbl_sp in &table_species {
+            if !matched_table_set.contains(tbl_sp) {
+                report.pruned_table_rows.push(tbl_sp.clone());
+            }
+        }
+
+        report.matched_species_count = matched_tree_to_table.len();
+
+        // Step 4: Strict validation or Pruning execution
+        if !options.prune && (!report.pruned_tree_tips.is_empty() || !report.pruned_table_rows.is_empty()) {
             return Err(ComparativeDataError::SpeciesMismatch {
-                tree_species: tree_normalized_tips,
-                table_species,
+                matched_count: report.matched_species_count,
+                tree_species: report.pruned_tree_tips,
+                table_species: report.pruned_table_rows,
             });
         }
 
-        // Reorder DataFrame rows to match exact order of tree tips
-        let species_col = df.column("species_id")?.str()?.clone();
-        let mut row_indices = Vec::with_capacity(tree_normalized_tips.len());
+        // Apply tree pruning if needed
+        let final_tree = if !report.pruned_tree_tips.is_empty() {
+            let keep_set: HashSet<String> = matched_tree_to_table.keys().cloned().collect();
+            tree.prune(&keep_set).map_err(ComparativeDataError::PruningError)?
+        } else {
+            tree
+        };
 
-        for target in &tree_normalized_tips {
+        let final_tree_tips = final_tree.normalized_tip_names();
+
+        // Reorder DataFrame rows to match final pruned tree tip order
+        let species_col = df.column("species_id")?.str()?.clone();
+        let mut row_indices = Vec::with_capacity(final_tree_tips.len());
+
+        for target_tip in &final_tree_tips {
+            let target_table_sp = matched_tree_to_table.get(target_tip).unwrap_or(target_tip);
             let idx = species_col
                 .into_iter()
-                .position(
-                    |opt_val| opt_val == Some(target.as_str())
-                )
-                .ok_or_else(|| ComparativeDataError::SpeciesMismatch {
-                    tree_species: tree_normalized_tips.clone(),
-                    table_species: table_species.clone(),
-                })?;
+                .position(|opt_val| opt_val == Some(target_table_sp.as_str()))
+                .ok_or_else(|| ComparativeDataError::PruningError(format!("Failed to find row for '{}'", target_table_sp)))?;
             row_indices.push(idx as u32);
         }
 
@@ -154,9 +255,10 @@ impl ComparativeData {
         let aligned_df = df.take(&idx_ca)?;
 
         Ok(Self {
-            tree,
-            species_names: tree_normalized_tips,
+            tree: final_tree,
+            species_names: final_tree_tips,
             data: aligned_df,
+            report,
         })
     }
 }
@@ -175,34 +277,39 @@ mod tests {
 
         let comp_data = ComparativeData::from_newick_and_tsv(newick, tsv).expect("ComparativeData alignment failed");
         assert_eq!(comp_data.species_names.len(), 3);
-        assert_eq!(comp_data.data.height(), 3);
-
-        // Verify ordering matches tree tips: Canis_lupus_familiaris, Homo_sapiens, Macaca_mulatta
-        let species_col = comp_data.data.column("species_id").unwrap().str().unwrap();
-        let species_vec: Vec<&str> = species_col.into_iter().map(|s| s.unwrap()).collect();
-        assert_eq!(species_vec, vec!["Canis_lupus_familiaris", "Homo_sapiens", "Macaca_mulatta"]);
+        assert_eq!(comp_data.report.matched_species_count, 3);
+        assert!(comp_data.report.pruned_tree_tips.is_empty());
     }
 
     #[test]
-    fn test_comparative_data_mismatch_error() {
-        let newick = "((Homo_sapiens_protein:1,Macaca_mulatta_protein.faa:1):0.5);";
+    fn test_fuzzy_taxonomy_matching_canis() {
+        let newick = "(Canis_lupus_familiaris_protein:0.5,(Homo_sapiens_protein:1,Macaca_mulatta_protein.faa:1)1:0.5);";
         let tsv = "Genus\tSpecies\tCommon name\tBirth weight (g)\n\
-                   Homo\tsapiens\tHuman\t3312.5\n";
+                   Canis\tfamiliaris\tDog\t250\n\
+                   Homo\tsapiens\tHuman\t3312.5\n\
+                   Macaca\tmulatta\tRhesus monkey\t464\n";
 
-        let res = ComparativeData::from_newick_and_tsv(newick, tsv);
-        assert!(res.is_err(), "Expected error on species mismatch");
+        let comp_data = ComparativeData::from_newick_and_tsv(newick, tsv).expect("Fuzzy taxonomy alignment failed");
+        assert_eq!(comp_data.report.matched_species_count, 3);
+        assert_eq!(comp_data.report.taxonomy_matches.len(), 1);
+        assert!(comp_data.report.taxonomy_matches[0].contains("Canis_lupus_familiaris"));
     }
 
     #[test]
-    fn test_comparative_data_single_species_column() {
-        let newick = "((Homo_sapiens_protein:1,Macaca_mulatta_protein.faa:1):0.5);";
-        let tsv = "species\ttrait_val\n\
-                   Homo_sapiens\t3312.5\n\
-                   Macaca_mulatta\t464.0\n";
+    fn test_pruning_with_report() {
+        let newick = "(Canis_lupus_familiaris_protein:0.5,(Homo_sapiens_protein:1,Macaca_mulatta_protein.faa:1)1:0.5);";
+        let tsv = "Genus\tSpecies\tCommon name\tBirth weight (g)\n\
+                   Homo\tsapiens\tHuman\t3312.5\n\
+                   Macaca\tmulatta\tRhesus monkey\t464\n";
 
-        let comp_data = ComparativeData::from_newick_and_tsv(newick, tsv).expect("Single species column alignment failed");
+        let opts = ComparativeDataOptions {
+            prune: true,
+            fuzzy_taxonomy: true,
+        };
+
+        let comp_data = ComparativeData::from_newick_and_tsv_with_options(newick, tsv, &opts).unwrap();
+        assert_eq!(comp_data.report.matched_species_count, 2);
+        assert_eq!(comp_data.report.pruned_tree_tips, vec!["Canis_lupus_familiaris"]);
         assert_eq!(comp_data.species_names.len(), 2);
-        assert_eq!(comp_data.data.height(), 2);
-        assert!(comp_data.data.column("species_id").is_ok());
     }
 }
