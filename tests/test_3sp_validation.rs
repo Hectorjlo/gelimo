@@ -66,3 +66,54 @@ fn test_3sp_vcv_and_pagel_lambda_phase_1_and_2() {
     assert_relative_eq!(v_lambda[(1, 2)], 0.25, epsilon = 1e-12);
     assert_relative_eq!(v_lambda[(2, 1)], 0.25, epsilon = 1e-12);
 }
+
+#[test]
+fn test_3sp_solver_modes_comparison_phase_4() {
+    use approx::assert_relative_eq;
+    use gelimo::data::ComparativeData;
+    use gelimo::math::{
+        compute_vcv, solve_gls_linear, solve_gls_with_mode, GlsSolverMode,
+        LinearSolverWorkspace,
+    };
+
+    let comp_data = ComparativeData::from_files("data/benchmark_3sp.tree", "data/benchmark_3sp.tsv")
+        .expect("Failed to load ComparativeData");
+
+    let y = comp_data.to_response_vector("Maximum longevity (yrs)").unwrap();
+    let x = comp_data.to_design_matrix(&["Adult weight (g)"]).unwrap();
+    let vcv = compute_vcv(&comp_data.tree);
+
+    // Mode 1: Dense Cholesky O(N^3)
+    let res_dense = solve_gls_with_mode(
+        GlsSolverMode::DenseCholesky,
+        Some(&comp_data.tree),
+        Some(&vcv),
+        &x,
+        &y,
+    )
+    .expect("Dense Cholesky solve failed");
+
+    // Mode 2: Linear Ho & Ané (2014) O(N) with pre-allocated zero-allocation workspace
+    let mut ws = LinearSolverWorkspace::new(comp_data.tree.nodes.len(), 2);
+    let res_linear = solve_gls_linear(&comp_data.tree, &x, &y, Some(&mut ws))
+        .expect("Linear Ho & Ané solve failed");
+
+    // Floating-point precision validation (tolerance <= 1e-8)
+    assert_relative_eq!(
+        res_dense.beta[(0, 0)],
+        res_linear.beta[(0, 0)],
+        epsilon = 1e-8
+    );
+    assert_relative_eq!(
+        res_dense.beta[(1, 0)],
+        res_linear.beta[(1, 0)],
+        epsilon = 1e-8
+    );
+
+    assert_relative_eq!(res_dense.sigma2_ml, res_linear.sigma2_ml, epsilon = 1e-8);
+    assert_relative_eq!(
+        res_dense.log_likelihood,
+        res_linear.log_likelihood,
+        epsilon = 1e-8
+    );
+}

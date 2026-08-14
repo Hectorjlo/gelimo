@@ -1,7 +1,16 @@
-//! GLS linear system solver using Cholesky decomposition.
-
+use crate::tree::PhyloTree;
 use faer::linalg::solvers::DenseSolveCore;
 use faer::{Mat, Side};
+
+/// Configurable algorithm mode for solving GLS regression systems.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum GlsSolverMode {
+    /// Dense Cholesky decomposition $O(N^3)$ (default for small/medium trees).
+    #[default]
+    DenseCholesky,
+    /// Linear-time tree traversal $O(N)$ (Ho & Ané 2014, for large trees).
+    LinearHoAne,
+}
 
 /// Result container for GLS / PGLS regression solution.
 #[derive(Debug, Clone)]
@@ -216,6 +225,26 @@ pub fn solve_gls(
         log_det_v,
         vcov_beta,
     })
+}
+
+/// Solves GLS regression system using specified `GlsSolverMode` (Dense Cholesky O(N^3) or Linear Ho & Ané O(N)).
+pub fn solve_gls_with_mode(
+    mode: GlsSolverMode,
+    tree: Option<&PhyloTree>,
+    vcv: Option<&Mat<f64>>,
+    x: &Mat<f64>,
+    y: &Mat<f64>,
+) -> Result<GlsResult, String> {
+    match mode {
+        GlsSolverMode::DenseCholesky => {
+            let v = vcv.ok_or("DenseCholesky mode requires a VCV matrix")?;
+            solve_gls(v, x, y)
+        }
+        GlsSolverMode::LinearHoAne => {
+            let t = tree.ok_or("LinearHoAne mode requires a PhyloTree")?;
+            crate::math::linear_solver::solve_gls_linear(t, x, y, None)
+        }
+    }
 }
 
 #[cfg(test)]
