@@ -261,6 +261,64 @@ impl ComparativeData {
             report,
         })
     }
+
+    /// Extracts a response vector $Y$ ($N \times 1$) from a numeric column in `data`.
+    // ponytail: zero-copy column extraction into faer matrix
+    pub fn to_response_vector(&self, col_name: &str) -> Result<faer::Mat<f64>, ComparativeDataError> {
+        let col = self.data.column(col_name)?;
+        let n = self.data.height();
+        let mut y = faer::Mat::zeros(n, 1);
+
+        if let Ok(ca) = col.f64() {
+            for i in 0..n {
+                y[(i, 0)] = ca.get(i).unwrap_or(0.0);
+            }
+        } else if let Ok(ca) = col.i64() {
+            for i in 0..n {
+                y[(i, 0)] = ca.get(i).unwrap_or(0) as f64;
+            }
+        } else {
+            return Err(ComparativeDataError::PruningError(format!(
+                "Column '{}' is not numeric",
+                col_name
+            )));
+        }
+
+        Ok(y)
+    }
+
+    /// Extracts a design matrix $X$ ($N \times p$) with an intercept column of 1s and specified predictor columns.
+    // ponytail: design matrix construction with automatic 1.0 intercept column
+    pub fn to_design_matrix(&self, predictor_cols: &[&str]) -> Result<faer::Mat<f64>, ComparativeDataError> {
+        let n = self.data.height();
+        let p = predictor_cols.len() + 1;
+        let mut x = faer::Mat::zeros(n, p);
+
+        // Intercept column
+        for i in 0..n {
+            x[(i, 0)] = 1.0;
+        }
+
+        for (j, &col_name) in predictor_cols.iter().enumerate() {
+            let col = self.data.column(col_name)?;
+            if let Ok(ca) = col.f64() {
+                for i in 0..n {
+                    x[(i, j + 1)] = ca.get(i).unwrap_or(0.0);
+                }
+            } else if let Ok(ca) = col.i64() {
+                for i in 0..n {
+                    x[(i, j + 1)] = ca.get(i).unwrap_or(0) as f64;
+                }
+            } else {
+                return Err(ComparativeDataError::PruningError(format!(
+                    "Column '{}' is not numeric",
+                    col_name
+                )));
+            }
+        }
+
+        Ok(x)
+    }
 }
 
 #[cfg(test)]
