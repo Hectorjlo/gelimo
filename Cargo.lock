@@ -845,6 +845,7 @@ dependencies = [
  "nom",
  "polars",
  "rayon",
+ "thiserror 2.0.19",
 ]
 
 [[package]]

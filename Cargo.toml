@@ -2,6 +2,7 @@
 name = "gelimo"
 version = "0.1.0"
 edition = "2024"
+default-run = "gelimo"
 authors = ["Héctor Jesús López Ordaz <hectorjl@lcg.unam.mx>"]
 description = "Generalized Phylogenetic Linear Models engine in Rust"
 
@@ -13,6 +14,7 @@ argmin = "0.10"
 approx = "0.5"
 nom = "7.1"
 clap = { version = "4.5", features = ["derive"] }
+thiserror = "2.0"
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
