@@ -2,4 +2,4 @@
 
 pub mod comparative;
 
-pub use comparative::ComparativeData;
+pub use comparative::{ComparativeData, ComparativeDataOptions, PruneReport};

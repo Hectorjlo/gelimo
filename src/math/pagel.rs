@@ -22,6 +22,20 @@ pub fn apply_pagel_lambda(vcv: &Mat<f64>, lambda: f64) -> Mat<f64> {
     v_lambda
 }
 
+/// Applies Pagel's $\lambda$ transformation to a `PhyloTree` by scaling internal branch lengths.
+// ponytail: tree branch length lambda transformation
+pub fn apply_pagel_lambda_tree(tree: &PhyloTree, lambda: f64) -> PhyloTree {
+    let mut new_tree = tree.clone();
+    for node in &mut new_tree.nodes {
+        if !node.is_tip && node.id != tree.root {
+            if let Some(b) = node.branch_length {
+                node.branch_length = Some(b * lambda);
+            }
+        }
+    }
+    new_tree
+}
+
 /// Applies Pagel's $\kappa$ transformation to a `PhyloTree`, scaling branch lengths by $b^\kappa$.
 // ponytail: pure functional branch length exponentiation
 pub fn apply_pagel_kappa(tree: &PhyloTree, kappa: f64) -> PhyloTree {
