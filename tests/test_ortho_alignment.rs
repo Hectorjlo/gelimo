@@ -1,5 +1,5 @@
 use gelimo::data::ComparativeDataOptions;
-use gelimo::genomics::align_tripartite;
+use gelimo::genomics::{align_tripartite, filter_orthogroups, OrthoFilterOptions};
 
 #[test]
 fn test_tripartite_alignment_mammals_real_data() {
@@ -39,4 +39,26 @@ fn test_tripartite_alignment_mammals_real_data() {
     // Verify first orthogroup slice has exact length N
     let og0_counts = tri_data.orthogroups.get_og_counts(0);
     assert_eq!(og0_counts.len(), tri_data.species_names.len());
+
+    // Phase B Test: QC Filtering
+    let filter_opts = OrthoFilterOptions {
+        min_species_count: 10, // at least 10 species possess the gene
+        min_variance: 1e-5,
+        binary_mode: false,
+        species_total_genes: None,
+    };
+
+    let filter_start = std::time::Instant::now();
+    let filtered_ortho = filter_orthogroups(&tri_data.orthogroups, &filter_opts);
+    let filter_elapsed = filter_start.elapsed();
+
+    println!("QC Filtering completed in: {:?}", filter_elapsed);
+    println!("Initial orthogroups:       {}", filtered_ortho.filter_report.initial_orthogroups);
+    println!("Retained orthogroups:      {}", filtered_ortho.filter_report.retained_orthogroups);
+    println!("Discarded invariant:       {}", filtered_ortho.filter_report.discarded_invariant);
+    println!("Discarded low prevalence:  {}", filtered_ortho.filter_report.discarded_low_prevalence);
+    println!("Discarded low variance:    {}", filtered_ortho.filter_report.discarded_low_variance);
+
+    assert!(filtered_ortho.num_orthogroups() > 10000);
+    assert_eq!(filtered_ortho.num_species(), tri_data.species_names.len());
 }

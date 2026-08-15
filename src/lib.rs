@@ -11,8 +11,9 @@ pub mod stats;
 pub mod tree;
 
 pub use genomics::{
-    align_tripartite, read_orthogroup_gene_counts, OrthoGeneCountTable,
-    TripartiteComparativeData, TripartiteReport,
+    align_tripartite, filter_orthogroups, read_orthogroup_gene_counts, FilteredOrthoData,
+    OrthoFilterOptions, OrthoFilterReport, OrthoGeneCountTable, TripartiteComparativeData,
+    TripartiteReport,
 };
 pub use opt::{grid_search_lambda_parallel, optimize_pagel_lambda, LambdaOptResult};
 pub use pipeline::{run_pgls_pipeline, PglsConfig, PglsSummary};
