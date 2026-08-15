@@ -268,20 +268,11 @@ impl ComparativeData {
         let col = self.data.column(col_name)?;
         let n = self.data.height();
         let mut y = faer::Mat::zeros(n, 1);
+        let vals = extract_f64_values(col, n)
+            .map_err(|e| ComparativeDataError::PruningError(e))?;
 
-        if let Ok(ca) = col.f64() {
-            for i in 0..n {
-                y[(i, 0)] = ca.get(i).unwrap_or(0.0);
-            }
-        } else if let Ok(ca) = col.i64() {
-            for i in 0..n {
-                y[(i, 0)] = ca.get(i).unwrap_or(0) as f64;
-            }
-        } else {
-            return Err(ComparativeDataError::PruningError(format!(
-                "Column '{}' is not numeric",
-                col_name
-            )));
+        for i in 0..n {
+            y[(i, 0)] = vals[i];
         }
 
         Ok(y)
@@ -301,24 +292,40 @@ impl ComparativeData {
 
         for (j, &col_name) in predictor_cols.iter().enumerate() {
             let col = self.data.column(col_name)?;
-            if let Ok(ca) = col.f64() {
-                for i in 0..n {
-                    x[(i, j + 1)] = ca.get(i).unwrap_or(0.0);
-                }
-            } else if let Ok(ca) = col.i64() {
-                for i in 0..n {
-                    x[(i, j + 1)] = ca.get(i).unwrap_or(0) as f64;
-                }
-            } else {
-                return Err(ComparativeDataError::PruningError(format!(
-                    "Column '{}' is not numeric",
-                    col_name
-                )));
+            let vals = extract_f64_values(col, n)
+                .map_err(|e| ComparativeDataError::PruningError(e))?;
+            for i in 0..n {
+                x[(i, j + 1)] = vals[i];
             }
         }
 
         Ok(x)
     }
+}
+
+// ponytail: robust column-to-float extractor handling float, int, string numbers
+fn extract_f64_values(col: &polars::frame::column::Column, n: usize) -> Result<Vec<f64>, String> {
+    if let Ok(ca) = col.f64() {
+        return Ok((0..n).map(|i| ca.get(i).unwrap_or(0.0)).collect());
+    }
+    if let Ok(ca) = col.i64() {
+        return Ok((0..n).map(|i| ca.get(i).unwrap_or(0) as f64).collect());
+    }
+    if let Ok(cast_col) = col.cast(&polars::datatypes::DataType::Float64) {
+        if let Ok(ca) = cast_col.f64() {
+            return Ok((0..n).map(|i| ca.get(i).unwrap_or(0.0)).collect());
+        }
+    }
+    if let Ok(ca) = col.str() {
+        return Ok((0..n)
+            .map(|i| {
+                ca.get(i)
+                    .and_then(|s| s.trim().parse::<f64>().ok())
+                    .unwrap_or(0.0)
+            })
+            .collect());
+    }
+    Err(format!("Column '{}' could not be converted to numeric f64", col.name()))
 }
 
 #[cfg(test)]

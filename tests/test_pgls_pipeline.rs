@@ -48,8 +48,9 @@ fn test_full_pgls_pipeline_3sp() {
     // 6. Compute R^2 and AIC metrics
     let l_mat = vcv_lambda1.as_ref().llt(faer::Side::Lower).unwrap().L().to_owned();
     let y_star = gelimo::math::solver::forward_substitute(&l_mat, &y);
+    let x_star = gelimo::math::solver::forward_substitute(&l_mat, &x);
 
-    let r2 = compute_r_squared(&gls_res, &y_star);
+    let r2 = compute_r_squared(&gls_res, &x_star, &y_star);
     let aic = compute_aic(gls_res.log_likelihood, 3); // 2 betas + 1 sigma2
 
     assert!(r2 >= 0.0 && r2 <= 1.0);

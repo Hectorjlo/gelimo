@@ -71,7 +71,7 @@ pub fn run_pgls_pipeline(config: &PglsConfig) -> Result<PglsSummary, String> {
         &y,
     )?;
 
-    // Compute R^2
+    // Compute R^2 with exact projection on transformed intercept
     let l_mat = vcv_lambda
         .as_ref()
         .llt(faer::Side::Lower)
@@ -79,7 +79,8 @@ pub fn run_pgls_pipeline(config: &PglsConfig) -> Result<PglsSummary, String> {
         .L()
         .to_owned();
     let y_star = crate::math::solver::forward_substitute(&l_mat, &y);
-    let r_squared = compute_r_squared(&gls_result, &y_star);
+    let x_star = crate::math::solver::forward_substitute(&l_mat, &x);
+    let r_squared = compute_r_squared(&gls_result, &x_star, &y_star);
 
     let num_params = config.predictor_cols.len() + 2; // intercept + predictors + sigma2
     let aic = compute_aic(gls_result.log_likelihood, num_params);

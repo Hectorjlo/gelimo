@@ -17,21 +17,33 @@ pub fn compute_aic(log_likelihood: f64, num_params: usize) -> f64 {
     2.0 * (num_params as f64) - 2.0 * log_likelihood
 }
 
-/// Computes $R^2$ (Phylogenetic Coefficient of Determination) from transformed system residuals.
+/// Computes phylogenetic $R^2$ (Coefficient of Determination) using exact projection on transformed intercept $X_0^* = L^{-1} \mathbf{1}$.
 ///
-/// $R^2 = 1 - \frac{\text{RSS}^*}{\text{TSS}^*}$
-// ponytail: transformed residual coefficient of determination R^2
-pub fn compute_r_squared(gls_result: &GlsResult, y_star: &Mat<f64>) -> f64 {
+/// $\text{TSS}^* = (Y^* - X_0^* \hat{\mu}_{\text{null}})^T (Y^* - X_0^* \hat{\mu}_{\text{null}})$
+/// where $\hat{\mu}_{\text{null}} = \frac{(X_0^*)^T Y^*}{(X_0^*)^T X_0^*}$.
+/// $R^2 = 1 - \frac{\text{RSS}^*}{\text{TSS}^*}$.
+// ponytail: exact GLS null model projection on transformed intercept X0*
+pub fn compute_r_squared(gls_result: &GlsResult, x0_star: &Mat<f64>, y_star: &Mat<f64>) -> f64 {
     let n = y_star.nrows();
-    let mut sum_y = 0.0;
+    let mut dot_x0_y = 0.0;
+    let mut dot_x0_x0 = 0.0;
+
     for i in 0..n {
-        sum_y += y_star[(i, 0)];
+        let x0 = x0_star[(i, 0)];
+        let y = y_star[(i, 0)];
+        dot_x0_y += x0 * y;
+        dot_x0_x0 += x0 * x0;
     }
-    let mean_y = sum_y / (n as f64);
+
+    let mu_null = if dot_x0_x0 > 1e-15 {
+        dot_x0_y / dot_x0_x0
+    } else {
+        0.0
+    };
 
     let mut tss_star = 0.0;
     for i in 0..n {
-        let diff = y_star[(i, 0)] - mean_y;
+        let diff = y_star[(i, 0)] - x0_star[(i, 0)] * mu_null;
         tss_star += diff * diff;
     }
 
