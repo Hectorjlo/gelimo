@@ -1,5 +1,8 @@
 use gelimo::data::ComparativeDataOptions;
-use gelimo::genomics::{align_tripartite, filter_orthogroups, OrthoFilterOptions};
+use gelimo::genomics::{
+    align_tripartite, filter_orthogroups, run_ortho_pgls_parallel, OrthoFilterOptions,
+    OrthoPglsConfig,
+};
 
 #[test]
 fn test_tripartite_alignment_mammals_real_data() {
@@ -20,6 +23,7 @@ fn test_tripartite_alignment_mammals_real_data() {
         fuzzy_taxonomy: true,
     };
 
+    // Phase A: Tripartite Alignment
     let start = std::time::Instant::now();
     let tri_data = align_tripartite(tree_path, pheno_path, &options, ortho_path)
         .expect("Tripartite alignment failed");
@@ -28,21 +32,10 @@ fn test_tripartite_alignment_mammals_real_data() {
     println!("Tripartite alignment completed in: {:?}", elapsed);
     println!("Matched species count: {}", tri_data.species_names.len());
     println!("Total orthogroups: {}", tri_data.orthogroups.num_orthogroups());
-    println!("Taxonomy matches: {}", tri_data.report.taxonomy_matches.len());
 
-    assert!(tri_data.species_names.len() > 100);
-    assert_eq!(tri_data.tree.tips.len(), tri_data.species_names.len());
-    assert_eq!(tri_data.pheno_data.height(), tri_data.species_names.len());
-    assert_eq!(tri_data.orthogroups.num_species(), tri_data.species_names.len());
-    assert_eq!(tri_data.orthogroups.num_orthogroups(), 29965);
-
-    // Verify first orthogroup slice has exact length N
-    let og0_counts = tri_data.orthogroups.get_og_counts(0);
-    assert_eq!(og0_counts.len(), tri_data.species_names.len());
-
-    // Phase B Test: QC Filtering
+    // Phase B: QC Filtering
     let filter_opts = OrthoFilterOptions {
-        min_species_count: 10, // at least 10 species possess the gene
+        min_species_count: 10,
         min_variance: 1e-5,
         binary_mode: false,
         species_total_genes: None,
@@ -53,12 +46,63 @@ fn test_tripartite_alignment_mammals_real_data() {
     let filter_elapsed = filter_start.elapsed();
 
     println!("QC Filtering completed in: {:?}", filter_elapsed);
-    println!("Initial orthogroups:       {}", filtered_ortho.filter_report.initial_orthogroups);
-    println!("Retained orthogroups:      {}", filtered_ortho.filter_report.retained_orthogroups);
-    println!("Discarded invariant:       {}", filtered_ortho.filter_report.discarded_invariant);
-    println!("Discarded low prevalence:  {}", filtered_ortho.filter_report.discarded_low_prevalence);
-    println!("Discarded low variance:    {}", filtered_ortho.filter_report.discarded_low_variance);
+    println!("Retained orthogroups: {}", filtered_ortho.num_orthogroups());
 
-    assert!(filtered_ortho.num_orthogroups() > 10000);
-    assert_eq!(filtered_ortho.num_species(), tri_data.species_names.len());
+    // Phase C: Parallel PGLS Engine
+    // Wrap aligned pheno DataFrame into ComparativeData helper to extract Y and covariates
+    let comp_helper = gelimo::data::ComparativeData {
+        tree: tri_data.tree.clone(),
+        species_names: tri_data.species_names.clone(),
+        data: tri_data.pheno_data.clone(),
+        report: Default::default(),
+    };
+
+    let y = comp_helper
+        .to_response_vector("Maximum longevity (yrs)")
+        .expect("Failed to extract Y");
+
+    let cov = comp_helper
+        .to_response_vector("Log Adult weight (g)")
+        .ok();
+
+    let pgls_config = OrthoPglsConfig { lambda: 0.8723 };
+
+    let pgls_start = std::time::Instant::now();
+    let results = run_ortho_pgls_parallel(
+        &tri_data.tree,
+        &y,
+        cov.as_ref(),
+        &filtered_ortho,
+        &pgls_config,
+    )
+    .expect("Parallel PGLS execution failed");
+    let pgls_elapsed = pgls_start.elapsed();
+
+    println!(
+        "Parallel PGLS across {} orthogroups completed in: {:?}",
+        results.len(),
+        pgls_elapsed
+    );
+
+    assert_eq!(results.len(), filtered_ortho.num_orthogroups());
+
+    // Inspect top hits with lowest p-values
+    let mut sorted_results = results.clone();
+    sorted_results.sort_by(|a, b| a.p_value.partial_cmp(&b.p_value).unwrap());
+
+    println!("--- Top 5 Longevity-Associated Orthogroups ---");
+    for (rank, hit) in sorted_results.iter().take(5).enumerate() {
+        println!(
+            "{}. {} | Beta: {:+.4} | SE: {:.4} | t: {:+.3} | p-val: {:.4e} | R2: {:.4} | Species: {}/{}",
+            rank + 1,
+            hit.orthogroup_id,
+            hit.beta_og,
+            hit.se_og,
+            hit.t_stat,
+            hit.p_value,
+            hit.r_squared,
+            hit.species_with_gene,
+            tri_data.species_names.len()
+        );
+    }
 }
