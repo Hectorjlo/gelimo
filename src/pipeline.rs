@@ -7,6 +7,8 @@ use crate::math::{
 };
 use crate::stats::{compute_aic, compute_r_squared};
 
+use crate::opt::{optimize_pagel_lambda, LambdaOptResult};
+
 /// Configuration options for running a PGLS model.
 #[derive(Debug, Clone)]
 pub struct PglsConfig {
@@ -15,6 +17,7 @@ pub struct PglsConfig {
     pub response_col: String,
     pub predictor_cols: Vec<String>,
     pub lambda: f64,
+    pub optimize_lambda: bool,
     pub prune: bool,
     pub solver_mode: GlsSolverMode,
 }
@@ -27,10 +30,12 @@ pub struct PglsSummary {
     pub r_squared: f64,
     pub aic: f64,
     pub p_values: Vec<f64>,
+    pub lambda_used: f64,
+    pub lambda_opt: Option<LambdaOptResult>,
 }
 
 /// Executes the full PGLS pipeline from file ingestion to model fitting and statistical summary.
-// ponytail: high-level pipeline linking data ingestion, tree scaling, solver and metrics
+// ponytail: high-level pipeline linking data ingestion, tree scaling, solver, ML opt and metrics
 pub fn run_pgls_pipeline(config: &PglsConfig) -> Result<PglsSummary, String> {
     let options = ComparativeDataOptions {
         prune: config.prune,
@@ -53,23 +58,31 @@ pub fn run_pgls_pipeline(config: &PglsConfig) -> Result<PglsSummary, String> {
         .to_design_matrix(&predictor_refs)
         .map_err(|e| format!("Failed to extract design matrix X: {}", e))?;
 
-    // Apply Pagel's lambda transformation if needed
-    let scaled_tree = if (config.lambda - 1.0).abs() > 1e-12 {
-        apply_pagel_lambda_tree(&comp_data.tree, config.lambda)
+    let base_vcv = compute_vcv(&comp_data.tree);
+
+    let (lambda_used, gls_result, vcv_lambda, lambda_opt) = if config.optimize_lambda {
+        let opt_res = optimize_pagel_lambda(&base_vcv, &x, &y, 0.0, 1.0, 1e-6)?;
+        let lam = opt_res.optimal_lambda;
+        let v_opt = apply_pagel_lambda(&base_vcv, lam);
+        let gls_res = opt_res.gls_result.clone();
+        (lam, gls_res, v_opt, Some(opt_res))
     } else {
-        comp_data.tree.clone()
+        let lam = config.lambda;
+        let scaled_tree = if (lam - 1.0).abs() > 1e-12 {
+            apply_pagel_lambda_tree(&comp_data.tree, lam)
+        } else {
+            comp_data.tree.clone()
+        };
+        let v_lam = apply_pagel_lambda(&base_vcv, lam);
+        let gls_res = solve_gls_with_mode(
+            config.solver_mode,
+            Some(&scaled_tree),
+            Some(&v_lam),
+            &x,
+            &y,
+        )?;
+        (lam, gls_res, v_lam, None)
     };
-
-    let vcv = compute_vcv(&scaled_tree);
-    let vcv_lambda = apply_pagel_lambda(&vcv, config.lambda);
-
-    let gls_result = solve_gls_with_mode(
-        config.solver_mode,
-        Some(&scaled_tree),
-        Some(&vcv_lambda),
-        &x,
-        &y,
-    )?;
 
     // Compute R^2 with exact projection on transformed intercept
     let l_mat = vcv_lambda
@@ -82,7 +95,7 @@ pub fn run_pgls_pipeline(config: &PglsConfig) -> Result<PglsSummary, String> {
     let x_star = crate::math::solver::forward_substitute(&l_mat, &x);
     let r_squared = compute_r_squared(&gls_result, &x_star, &y_star);
 
-    let num_params = config.predictor_cols.len() + 2; // intercept + predictors + sigma2
+    let num_params = config.predictor_cols.len() + 2 + if config.optimize_lambda { 1 } else { 0 };
     let aic = compute_aic(gls_result.log_likelihood, num_params);
 
     // Compute two-tailed p-values for coefficients
@@ -100,6 +113,8 @@ pub fn run_pgls_pipeline(config: &PglsConfig) -> Result<PglsSummary, String> {
         r_squared,
         aic,
         p_values,
+        lambda_used,
+        lambda_opt,
     })
 }
 

@@ -26,6 +26,10 @@ struct Args {
     #[arg(short = 'l', long, default_value_t = 1.0)]
     lambda: f64,
 
+    /// Optimize Pagel's lambda by Maximum Likelihood (ML)
+    #[arg(long, default_value_t = false)]
+    opt_lambda: bool,
+
     /// Enable automatic tree and table pruning for non-matching species
     #[arg(short = 'p', long, default_value_t = false)]
     prune: bool,
@@ -49,6 +53,7 @@ fn main() {
         response_col: args.response,
         predictor_cols: args.predictors,
         lambda: args.lambda,
+        optimize_lambda: args.opt_lambda,
         prune: args.prune,
         solver_mode,
     };
@@ -70,7 +75,11 @@ fn print_summary(config: &PglsConfig, summary: &PglsSummary) {
     println!("Data file:  {}", config.data_path);
     println!("Response:   {}", config.response_col);
     println!("Predictors: {}", config.predictor_cols.join(", "));
-    println!("Pagel Lambda: {:.4}", config.lambda);
+    if config.optimize_lambda {
+        println!("Pagel Lambda: {:.4} (Optimized by Maximum Likelihood)", summary.lambda_used);
+    } else {
+        println!("Pagel Lambda: {:.4} (Fixed)", summary.lambda_used);
+    }
     println!();
     println!("--- Data Alignment & Pruning Summary ---");
     println!("Matched species count: {}", summary.comp_data.report.matched_species_count);
@@ -116,5 +125,16 @@ fn print_summary(config: &PglsConfig, summary: &PglsSummary) {
     println!("Multiple R-squared:            {:>12.4}", summary.r_squared);
     println!("AIC:                           {:>12.4}", summary.aic);
     println!("Solver Algorithm:              {:?}", config.solver_mode);
+
+    if let Some(ref opt) = summary.lambda_opt {
+        println!();
+        println!("--- Pagel Lambda Likelihood Ratio Tests ---");
+        println!("Estimated ML Lambda:           {:>12.4}", opt.optimal_lambda);
+        println!("Log-Likelihood (ML Lambda):    {:>12.4}", opt.log_likelihood_ml);
+        println!("Log-Likelihood (Lambda = 0):   {:>12.4}", opt.log_likelihood_lambda0);
+        println!("Log-Likelihood (Lambda = 1):   {:>12.4}", opt.log_likelihood_lambda1);
+        println!("LRT p-value vs Lambda = 0.0:   {:>12.4e}", opt.lrt_p_value_vs_0);
+        println!("LRT p-value vs Lambda = 1.0:   {:>12.4e}", opt.lrt_p_value_vs_1);
+    }
     println!("======================================================================");
 }
