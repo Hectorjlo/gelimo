@@ -11,8 +11,10 @@ pub mod stats;
 pub mod tree;
 
 pub use genomics::{
-    align_tripartite, filter_orthogroups, read_orthogroup_gene_counts, run_ortho_pgls_parallel,
-    FilteredOrthoData, OrthoFilterOptions, OrthoFilterReport, OrthoGeneCountTable, OrthoPglsConfig,
+    adjust_p_values, align_tripartite, export_ortho_results_tsv, filter_orthogroups,
+    read_orthogroup_gene_counts, run_ortho_pgls_parallel, run_ortho_pipeline,
+    AnnotatedOrthoResult, FilteredOrthoData, OrthoFilterOptions, OrthoFilterReport,
+    OrthoGeneCountTable, OrthoPipelineConfig, OrthoPipelineSummary, OrthoPglsConfig,
     OrthoPglsResult, TripartiteComparativeData, TripartiteReport,
 };
 pub use opt::{grid_search_lambda_parallel, optimize_pagel_lambda, LambdaOptResult};

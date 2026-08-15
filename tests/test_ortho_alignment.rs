@@ -1,7 +1,7 @@
 use gelimo::data::ComparativeDataOptions;
 use gelimo::genomics::{
-    align_tripartite, filter_orthogroups, run_ortho_pgls_parallel, OrthoFilterOptions,
-    OrthoPglsConfig,
+    adjust_p_values, align_tripartite, export_ortho_results_tsv, filter_orthogroups,
+    run_ortho_pgls_parallel, OrthoFilterOptions, OrthoPglsConfig,
 };
 
 #[test]
@@ -49,7 +49,6 @@ fn test_tripartite_alignment_mammals_real_data() {
     println!("Retained orthogroups: {}", filtered_ortho.num_orthogroups());
 
     // Phase C: Parallel PGLS Engine
-    // Wrap aligned pheno DataFrame into ComparativeData helper to extract Y and covariates
     let comp_helper = gelimo::data::ComparativeData {
         tree: tri_data.tree.clone(),
         species_names: tri_data.species_names.clone(),
@@ -68,7 +67,7 @@ fn test_tripartite_alignment_mammals_real_data() {
     let pgls_config = OrthoPglsConfig { lambda: 0.8723 };
 
     let pgls_start = std::time::Instant::now();
-    let results = run_ortho_pgls_parallel(
+    let raw_results = run_ortho_pgls_parallel(
         &tri_data.tree,
         &y,
         cov.as_ref(),
@@ -80,29 +79,36 @@ fn test_tripartite_alignment_mammals_real_data() {
 
     println!(
         "Parallel PGLS across {} orthogroups completed in: {:?}",
-        results.len(),
+        raw_results.len(),
         pgls_elapsed
     );
 
-    assert_eq!(results.len(), filtered_ortho.num_orthogroups());
+    // Phase D: Multiple Testing FDR & Bonferroni + TSV Export
+    let adjust_start = std::time::Instant::now();
+    let annotated_results = adjust_p_values(raw_results);
+    let adjust_elapsed = adjust_start.elapsed();
 
-    // Inspect top hits with lowest p-values
-    let mut sorted_results = results.clone();
-    sorted_results.sort_by(|a, b| a.p_value.partial_cmp(&b.p_value).unwrap());
+    println!("Multiple testing adjustment completed in: {:?}", adjust_elapsed);
 
-    println!("--- Top 5 Longevity-Associated Orthogroups ---");
-    for (rank, hit) in sorted_results.iter().take(5).enumerate() {
+    let output_tsv = "agy/test/mammals_longevity_orthogroups_pgls.tsv";
+    std::fs::create_dir_all("agy/test").unwrap();
+    export_ortho_results_tsv(&annotated_results, output_tsv).expect("TSV export failed");
+
+    println!("Exported results to: {}", output_tsv);
+    assert!(std::path::Path::new(output_tsv).exists());
+
+    println!("--- Top 5 Longevity Hits (with FDR q-values) ---");
+    for (rank, hit) in annotated_results.iter().take(5).enumerate() {
         println!(
-            "{}. {} | Beta: {:+.4} | SE: {:.4} | t: {:+.3} | p-val: {:.4e} | R2: {:.4} | Species: {}/{}",
+            "{}. {} | Beta: {:+.4} | SE: {:.4} | t: {:+.3} | p-val: {:.4e} | FDR q-val: {:.4e} | R2: {:.4}",
             rank + 1,
             hit.orthogroup_id,
             hit.beta_og,
             hit.se_og,
             hit.t_stat,
             hit.p_value,
-            hit.r_squared,
-            hit.species_with_gene,
-            tri_data.species_names.len()
+            hit.q_value_fdr,
+            hit.r_squared
         );
     }
 }
