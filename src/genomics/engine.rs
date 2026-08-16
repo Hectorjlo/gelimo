@@ -234,7 +234,7 @@ fn run_trait_response_pgls(
             let beta_og = beta[(1, 0)];
 
             let t_stat = if se_og > 0.0 { beta_og / se_og } else { 0.0 };
-            let p_value = 2.0 * (1.0 - approx_normal_cdf(t_stat.abs())).clamp(0.0, 1.0);
+            let p_value = 2.0 * (1.0 - crate::stats::metrics::approx_normal_cdf(t_stat.abs())).clamp(0.0, 1.0);
             let partial_r = if t_stat.is_finite() {
                 t_stat / (t_stat * t_stat + df).sqrt()
             } else {
@@ -406,7 +406,7 @@ fn run_gfs_response_pgls(
             let beta_og = beta[(1, 0)];
 
             let t_stat = if se_og > 0.0 { beta_og / se_og } else { 0.0 };
-            let p_value = 2.0 * (1.0 - approx_normal_cdf(t_stat.abs())).clamp(0.0, 1.0);
+            let p_value = 2.0 * (1.0 - crate::stats::metrics::approx_normal_cdf(t_stat.abs())).clamp(0.0, 1.0);
             let partial_r = if t_stat.is_finite() {
                 t_stat / (t_stat * t_stat + df).sqrt()
             } else {
@@ -435,26 +435,6 @@ fn run_gfs_response_pgls(
         .collect();
 
     Ok(results)
-}
-
-fn approx_normal_cdf(x: f64) -> f64 {
-    0.5 * (1.0 + erff(x / std::f64::consts::SQRT_2))
-}
-
-fn erff(x: f64) -> f64 {
-    let a1 = 0.254829592;
-    let a2 = -0.284496736;
-    let a3 = 1.421413741;
-    let a4 = -1.453152027;
-    let a5 = 1.061405429;
-    let p = 0.3275911;
-
-    let sign = if x < 0.0 { -1.0 } else { 1.0 };
-    let x_abs = x.abs();
-    let t = 1.0 / (1.0 + p * x_abs);
-    let y = 1.0 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * (-x_abs * x_abs).exp();
-
-    sign * y
 }
 
 #[cfg(test)]

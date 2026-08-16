@@ -142,28 +142,8 @@ fn compute_chisq1_p_value(stat: f64) -> f64 {
     }
     // For df = 1: P(ChiSq >= x) = 2 * (1 - Phi(sqrt(x)))
     let z = stat.sqrt();
-    let p = 2.0 * (1.0 - approx_normal_cdf(z));
+    let p = 2.0 * (1.0 - crate::stats::metrics::approx_normal_cdf(z));
     p.clamp(0.0, 1.0)
-}
-
-fn approx_normal_cdf(x: f64) -> f64 {
-    0.5 * (1.0 + erff(x / std::f64::consts::SQRT_2))
-}
-
-fn erff(x: f64) -> f64 {
-    let a1 = 0.254829592;
-    let a2 = -0.284496736;
-    let a3 = 1.421413741;
-    let a4 = -1.453152027;
-    let a5 = 1.061405429;
-    let p = 0.3275911;
-
-    let sign = if x < 0.0 { -1.0 } else { 1.0 };
-    let x_abs = x.abs();
-    let t = 1.0 / (1.0 + p * x_abs);
-    let y = 1.0 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * (-x_abs * x_abs).exp();
-
-    sign * y
 }
 
 #[cfg(test)]

@@ -50,29 +50,51 @@ pub struct ComparativeData {
     pub report: PruneReport,
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug)]
 pub enum ComparativeDataError {
-    #[error("IO error: {0}")]
-    Io(#[from] std::io::Error),
-
-    #[error("Tree parse error: {0}")]
+    Io(std::io::Error),
     TreeParse(String),
-
-    #[error("Polars data error: {0}")]
-    Polars(#[from] PolarsError),
-
-    #[error("Species column not found in trait table")]
+    Polars(PolarsError),
     MissingSpeciesColumn,
-
-    #[error("Tree pruning error: {0}")]
     PruningError(String),
-
-    #[error("Species mismatch between tree and trait table. Matched count: {matched_count}. Unmatched tree species: {tree_species:?}, Unmatched table species: {table_species:?}")]
     SpeciesMismatch {
         matched_count: usize,
         tree_species: Vec<String>,
         table_species: Vec<String>,
     },
+}
+
+impl std::fmt::Display for ComparativeDataError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Io(e) => write!(f, "IO error: {}", e),
+            Self::TreeParse(e) => write!(f, "Tree parse error: {}", e),
+            Self::Polars(e) => write!(f, "Polars data error: {}", e),
+            Self::MissingSpeciesColumn => write!(f, "Species column not found in trait table"),
+            Self::PruningError(e) => write!(f, "Tree pruning error: {}", e),
+            Self::SpeciesMismatch { matched_count, tree_species, table_species } => {
+                write!(
+                    f,
+                    "Species mismatch between tree and trait table. Matched count: {}. Unmatched tree species: {:?}, Unmatched table species: {:?}",
+                    matched_count, tree_species, table_species
+                )
+            }
+        }
+    }
+}
+
+impl std::error::Error for ComparativeDataError {}
+
+impl From<std::io::Error> for ComparativeDataError {
+    fn from(e: std::io::Error) -> Self {
+        Self::Io(e)
+    }
+}
+
+impl From<PolarsError> for ComparativeDataError {
+    fn from(e: PolarsError) -> Self {
+        Self::Polars(e)
+    }
 }
 
 impl ComparativeData {

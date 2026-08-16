@@ -60,6 +60,28 @@ pub fn compute_r_squared(gls_result: &GlsResult, x0_star: &Mat<f64>, y_star: &Ma
     }
 }
 
+/// Standard normal cumulative distribution function $\Phi(x)$ approximation.
+// ponytail: fast analytical Abramowitz and Stegun erf approximation
+pub fn approx_normal_cdf(x: f64) -> f64 {
+    0.5 * (1.0 + erff(x / std::f64::consts::SQRT_2))
+}
+
+fn erff(x: f64) -> f64 {
+    let a1 = 0.254829592;
+    let a2 = -0.284496736;
+    let a3 = 1.421413741;
+    let a4 = -1.453152027;
+    let a5 = 1.061405429;
+    let p = 0.3275911;
+
+    let sign = if x < 0.0 { -1.0 } else { 1.0 };
+    let x_abs = x.abs();
+    let t = 1.0 / (1.0 + p * x_abs);
+    let y = 1.0 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * (-x_abs * x_abs).exp();
+
+    sign * y
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
