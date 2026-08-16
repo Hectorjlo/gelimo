@@ -1,16 +1,30 @@
+use clap::builder::styling::{AnsiColor, Effects, Styles};
 use clap::{Args, Parser, Subcommand};
+use colored::Colorize;
 use gelimo::genomics::{run_ortho_pipeline, OrthoPipelineConfig, OrthoPipelineSummary};
 use gelimo::math::GlsSolverMode;
 use gelimo::pipeline::{run_pgls_pipeline, PglsConfig, PglsSummary};
+
+fn cli_styles() -> Styles {
+    Styles::styled()
+        .header(AnsiColor::BrightCyan.on_default() | Effects::BOLD)
+        .usage(AnsiColor::BrightYellow.on_default() | Effects::BOLD)
+        .literal(AnsiColor::BrightGreen.on_default() | Effects::BOLD)
+        .placeholder(AnsiColor::Cyan.on_default())
+        .valid(AnsiColor::BrightGreen.on_default())
+        .invalid(AnsiColor::Red.on_default() | Effects::BOLD)
+        .error(AnsiColor::Red.on_default() | Effects::BOLD)
+}
 
 /// gelimo: Generalized Phylogenetic Linear Models Engine in Rust
 #[derive(Parser, Debug)]
 #[command(
     name = "gelimo",
-    author = "Hector Rodriguez",
+    author = "Hector Jesus Lopez Ordaz <hectorjl@lcg.unam.mx>",
     version = "0.1.0",
     about = "Generalized Phylogenetic Linear Models and High-Throughput Genomic Screening Engine in Rust",
-    long_about = "High-performance PGLS engine compatible with R caper and optimized for genome-wide orthogroup analysis with Rayon."
+    long_about = "High-performance PGLS engine compatible with R caper and optimized for genome-wide orthogroup analysis with Rayon.",
+    styles = cli_styles()
 )]
 struct Cli {
     #[command(subcommand)]
@@ -20,11 +34,11 @@ struct Cli {
 #[derive(Subcommand, Debug)]
 enum Commands {
     /// Fit a single PGLS model on comparative species traits (caper compatible)
-    #[command(alias = "pgls")]
+    #[command(alias = "pgls", styles = cli_styles())]
     Fit(FitArgs),
 
     /// Run high-throughput parallel PGLS screening on OrthoFinder GeneCount tables
-    #[command(alias = "gwas")]
+    #[command(alias = "gwas", styles = cli_styles())]
     Orthogroups(OrthoArgs),
 }
 
@@ -143,7 +157,7 @@ fn run_fit_command(args: FitArgs) {
     match run_pgls_pipeline(&config) {
         Ok(summary) => print_fit_summary(&config, &summary),
         Err(err) => {
-            eprintln!("Error running PGLS model: {}", err);
+            eprintln!("{} {}", "Error running PGLS model:".red().bold(), err);
             std::process::exit(1);
         }
     }
@@ -166,20 +180,28 @@ fn run_ortho_command(args: OrthoArgs) {
         fuzzy_taxonomy: true,
     };
 
-    println!("======================================================================");
-    println!("gelimo v0.1.0 - High-Throughput Genomic Orthogroups PGLS Engine");
-    println!("======================================================================");
-    println!("Tree file:        {}", config.tree_path);
-    println!("Phenotype file:   {}", config.data_path);
-    println!("OrthoFinder file: {}", config.ortho_path);
-    println!("Response (Y):     {}", config.response_col);
+    println!("{}", "======================================================================".cyan().bold());
+    println!("{}", "gelimo v0.1.0 - High-Throughput Genomic Orthogroups PGLS Engine".bright_white().bold());
+    println!("{}", "======================================================================".cyan().bold());
+    println!("{:<18} {}", "Tree file:".bright_cyan().bold(), config.tree_path);
+    println!("{:<18} {}", "Phenotype file:".bright_cyan().bold(), config.data_path);
+    println!("{:<18} {}", "OrthoFinder file:".bright_cyan().bold(), config.ortho_path);
+    println!("{:<18} {}", "Response (Y):".bright_cyan().bold(), config.response_col.yellow().bold());
     if !config.covariate_cols.is_empty() {
-        println!("Covariates:       {}", config.covariate_cols.join(", "));
+        println!("{:<18} {}", "Covariates:".bright_cyan().bold(), config.covariate_cols.join(", ").yellow());
     }
-    println!("Output TSV:       {}", config.output_path);
-    println!("Mode:             {}", if config.binary_mode { "Binary (Presence/Absence)" } else { "Continuous (Gene Count / CNV)" });
+    println!("{:<18} {}", "Output TSV:".bright_cyan().bold(), config.output_path.green().bold());
+    println!(
+        "{:<18} {}",
+        "Mode:".bright_cyan().bold(),
+        if config.binary_mode {
+            "Binary (Presence/Absence)".magenta().bold()
+        } else {
+            "Continuous (Gene Count / CNV)".bright_magenta().bold()
+        }
+    );
     println!();
-    println!("Starting tripartite alignment, QC filtering and parallel PGLS...");
+    println!("{}", "Starting tripartite alignment, QC filtering and parallel PGLS...".bright_black().italic());
 
     let start = std::time::Instant::now();
     match run_ortho_pipeline(&config) {
@@ -188,47 +210,73 @@ fn run_ortho_command(args: OrthoArgs) {
             print_ortho_summary(&summary, elapsed);
         }
         Err(err) => {
-            eprintln!("Error in genomic PGLS pipeline: {}", err);
+            eprintln!("{} {}", "Error in genomic PGLS pipeline:".red().bold(), err);
             std::process::exit(1);
         }
     }
 }
 
-fn print_fit_summary(config: &PglsConfig, summary: &PglsSummary) {
-    println!("======================================================================");
-    println!("gelimo v0.1.0 - Generalized Phylogenetic Linear Models Engine");
-    println!("======================================================================");
-    println!("Tree file:  {}", config.tree_path);
-    println!("Data file:  {}", config.data_path);
-    println!("Response:   {}", config.response_col);
-    println!("Predictors: {}", config.predictor_cols.join(", "));
-    if config.optimize_lambda {
-        println!("Pagel Lambda: {:.4} (Optimized by Maximum Likelihood)", summary.lambda_used);
+fn format_p_value(p: f64) -> colored::ColoredString {
+    let s = format!("{:.4e}", p);
+    if p < 0.001 {
+        format!("{} ***", s).bright_green().bold()
+    } else if p < 0.01 {
+        format!("{} **", s).green().bold()
+    } else if p < 0.05 {
+        format!("{} *", s).green()
     } else {
-        println!("Pagel Lambda: {:.4} (Fixed)", summary.lambda_used);
+        s.dimmed()
+    }
+}
+
+fn print_fit_summary(config: &PglsConfig, summary: &PglsSummary) {
+    println!("{}", "======================================================================".cyan().bold());
+    println!("{}", "gelimo v0.1.0 - Generalized Phylogenetic Linear Models Engine".bright_white().bold());
+    println!("{}", "======================================================================".cyan().bold());
+    println!("{:<16} {}", "Tree file:".bright_cyan().bold(), config.tree_path);
+    println!("{:<16} {}", "Data file:".bright_cyan().bold(), config.data_path);
+    println!("{:<16} {}", "Response (Y):".bright_cyan().bold(), config.response_col.yellow().bold());
+    println!("{:<16} {}", "Predictors:".bright_cyan().bold(), config.predictor_cols.join(", ").yellow());
+    if config.optimize_lambda {
+        println!(
+            "{:<16} {}",
+            "Pagel Lambda:".bright_cyan().bold(),
+            format!("{:.4} (Optimized by ML)", summary.lambda_used).bright_green().bold()
+        );
+    } else {
+        println!(
+            "{:<16} {}",
+            "Pagel Lambda:".bright_cyan().bold(),
+            format!("{:.4} (Fixed)", summary.lambda_used).cyan()
+        );
     }
     println!();
-    println!("--- Data Alignment & Pruning Summary ---");
-    println!("Matched species count: {}", summary.comp_data.report.matched_species_count);
+    println!("{}", "--- Data Alignment & Pruning Summary ---".bright_yellow().bold());
+    println!("{:<24} {}", "Matched species count:".bright_white(), summary.comp_data.report.matched_species_count.to_string().green().bold());
     if !summary.comp_data.report.taxonomy_matches.is_empty() {
-        println!("Taxonomy matches:      {}", summary.comp_data.report.taxonomy_matches.len());
+        println!("{:<24} {}", "Taxonomy matches:".bright_white(), summary.comp_data.report.taxonomy_matches.len().to_string().green());
         for m in &summary.comp_data.report.taxonomy_matches {
-            println!("  * {}", m);
+            println!("  * {}", m.green());
         }
     }
     if !summary.comp_data.report.pruned_tree_tips.is_empty() {
-        println!("Pruned tree tips:      {}", summary.comp_data.report.pruned_tree_tips.len());
+        println!("{:<24} {}", "Pruned tree tips:".bright_white(), summary.comp_data.report.pruned_tree_tips.len().to_string().yellow());
     }
     if !summary.comp_data.report.pruned_table_rows.is_empty() {
-        println!("Pruned table rows:     {}", summary.comp_data.report.pruned_table_rows.len());
+        println!("{:<24} {}", "Pruned table rows:".bright_white(), summary.comp_data.report.pruned_table_rows.len().to_string().yellow());
     }
     println!();
-    println!("--- PGLS Model Coefficients ---");
+    println!("{}", "--- PGLS Model Coefficients ---".bright_yellow().bold());
     println!(
-        "{:<22} {:>12} {:>12} {:>12} {:>12}",
-        "Parameter", "Estimate", "Std. Error", "t value", "Pr(>|t|)"
+        "{}",
+        format!(
+            "{:<22} {:>12} {:>12} {:>12} {:>16}",
+            "Parameter", "Estimate", "Std. Error", "t value", "Pr(>|t|)"
+        )
+        .bright_cyan()
+        .bold()
     );
-    println!("{}", "-".repeat(70));
+    println!("{}", "-".repeat(78).bright_black());
 
     let param_names = std::iter::once("(Intercept)".to_string())
         .chain(config.predictor_cols.clone());
@@ -240,70 +288,88 @@ fn print_fit_summary(config: &PglsConfig, summary: &PglsSummary) {
         let p_val = summary.p_values[i];
 
         println!(
-            "{:<22} {:>12.4} {:>12.4} {:>12.4} {:>12.4e}",
-            p_name, b, se, t_val, p_val
+            "{:<22} {:>12} {:>12} {:>12} {:>18}",
+            p_name.bright_white().bold(),
+            format!("{:>12.4}", b).cyan().bold(),
+            format!("{:>12.4}", se).white(),
+            format!("{:>12.4}", t_val).bright_cyan(),
+            format_p_value(p_val)
         );
     }
 
     println!();
-    println!("--- Model Fit Statistics ---");
-    println!("Residual Variance (sigma2 ML): {:>12.4}", summary.gls_result.sigma2_ml);
-    println!("Log-Likelihood:                {:>12.4}", summary.gls_result.log_likelihood);
-    println!("Multiple R-squared:            {:>12.4}", summary.r_squared);
-    println!("AIC:                           {:>12.4}", summary.aic);
-    println!("Solver Algorithm:              {:?}", config.solver_mode);
+    println!("{}", "--- Model Fit Statistics ---".bright_yellow().bold());
+    println!("{:<32} {:>12.4}", "Residual Variance (sigma2 ML):".bright_white(), summary.gls_result.sigma2_ml);
+    println!("{:<32} {:>12.4}", "Log-Likelihood:".bright_white(), summary.gls_result.log_likelihood);
+    println!("{:<32} {}", "Multiple R-squared:".bright_white(), format!("{:>12.4}", summary.r_squared).bright_magenta().bold());
+    println!("{:<32} {:>12.4}", "AIC:".bright_white(), summary.aic);
+    println!("{:<32} {:>12?}", "Solver Algorithm:".bright_white(), config.solver_mode);
 
     if let Some(ref opt) = summary.lambda_opt {
         println!();
-        println!("--- Pagel Lambda Likelihood Ratio Tests ---");
-        println!("Estimated ML Lambda:           {:>12.4}", opt.optimal_lambda);
-        println!("Log-Likelihood (ML Lambda):    {:>12.4}", opt.log_likelihood_ml);
-        println!("Log-Likelihood (Lambda = 0):   {:>12.4}", opt.log_likelihood_lambda0);
-        println!("Log-Likelihood (Lambda = 1):   {:>12.4}", opt.log_likelihood_lambda1);
-        println!("LRT p-value vs Lambda = 0.0:   {:>12.4e}", opt.lrt_p_value_vs_0);
-        println!("LRT p-value vs Lambda = 1.0:   {:>12.4e}", opt.lrt_p_value_vs_1);
+        println!("{}", "--- Pagel Lambda Likelihood Ratio Tests ---".bright_yellow().bold());
+        println!("{:<32} {}", "Estimated ML Lambda:".bright_white(), format!("{:>12.4}", opt.optimal_lambda).bright_green().bold());
+        println!("{:<32} {:>12.4}", "Log-Likelihood (ML Lambda):".bright_white(), opt.log_likelihood_ml);
+        println!("{:<32} {:>12.4}", "Log-Likelihood (Lambda = 0):".bright_white(), opt.log_likelihood_lambda0);
+        println!("{:<32} {:>12.4}", "Log-Likelihood (Lambda = 1):".bright_white(), opt.log_likelihood_lambda1);
+        println!("{:<32} {:>20}", "LRT p-value vs Lambda = 0.0:".bright_white(), format_p_value(opt.lrt_p_value_vs_0));
+        println!("{:<32} {:>20}", "LRT p-value vs Lambda = 1.0:".bright_white(), format_p_value(opt.lrt_p_value_vs_1));
     }
-    println!("======================================================================");
+    println!("{}", "======================================================================".cyan().bold());
 }
 
 fn print_ortho_summary(summary: &OrthoPipelineSummary, elapsed: std::time::Duration) {
     println!();
-    println!("--- Alignment & QC Filtering Summary ---");
-    println!("Matched species count:     {}", summary.tri_report.matched_species_count);
-    println!("Taxonomy fuzzy matches:    {}", summary.tri_report.taxonomy_matches.len());
-    println!("Total raw orthogroups:     {}", summary.filter_report.initial_orthogroups);
-    println!("Retained QC orthogroups:   {}", summary.filter_report.retained_orthogroups);
-    println!("Discarded invariant:       {}", summary.filter_report.discarded_invariant);
-    println!("Discarded low prevalence:  {}", summary.filter_report.discarded_low_prevalence);
-    println!("Discarded low variance:    {}", summary.filter_report.discarded_low_variance);
-    println!("Pagel's lambda applied:    {:.4}", summary.lambda_used);
-    println!("Total execution time:      {:.2?}", elapsed);
+    println!("{}", "--- Alignment & QC Filtering Summary ---".bright_yellow().bold());
+    println!("{:<28} {}", "Matched species count:".bright_white(), summary.tri_report.matched_species_count.to_string().green().bold());
+    println!("{:<28} {}", "Taxonomy fuzzy matches:".bright_white(), summary.tri_report.taxonomy_matches.len().to_string().green());
+    println!("{:<28} {}", "Total raw orthogroups:".bright_white(), summary.filter_report.initial_orthogroups);
+    println!("{:<28} {}", "Retained QC orthogroups:".bright_white(), summary.filter_report.retained_orthogroups.to_string().bright_green().bold());
+    println!("{:<28} {}", "Discarded invariant:".bright_white(), summary.filter_report.discarded_invariant.to_string().yellow());
+    println!("{:<28} {}", "Discarded low prevalence:".bright_white(), summary.filter_report.discarded_low_prevalence.to_string().yellow());
+    println!("{:<28} {}", "Discarded low variance:".bright_white(), summary.filter_report.discarded_low_variance.to_string().yellow());
+    println!("{:<28} {}", "Pagel's lambda applied:".bright_white(), format!("{:.4}", summary.lambda_used).cyan().bold());
+    println!("{:<28} {}", "Total execution time:".bright_white(), format!("{:.2?}", elapsed).bright_green().bold());
     println!();
-    println!("--- Multiple Testing Significance Summary ---");
-    println!("Significant OGs (FDR q < 0.05):        {:>6}", summary.significant_fdr_05);
-    println!("Significant OGs (FDR q < 0.01):        {:>6}", summary.significant_fdr_01);
-    println!("Significant OGs (Bonferroni p < 0.05): {:>6}", summary.significant_bonferroni);
+    println!("{}", "--- Multiple Testing Significance Summary ---".bright_yellow().bold());
+    println!("{:<40} {}", "Significant OGs (FDR q < 0.05):".bright_white(), summary.significant_fdr_05.to_string().bright_green().bold());
+    println!("{:<40} {}", "Significant OGs (FDR q < 0.01):".bright_white(), summary.significant_fdr_01.to_string().bright_green().bold());
+    println!("{:<40} {}", "Significant OGs (Bonferroni p < 0.05):".bright_white(), summary.significant_bonferroni.to_string().bright_green().bold());
     println!();
-    println!("--- Top 10 Genomic Hits (Sorted by FDR q-value) ---");
+    println!("{}", "--- Top 10 Genomic Hits (Sorted by FDR q-value) ---".bright_yellow().bold());
     println!(
-        "{:<12} {:>10} {:>10} {:>8} {:>12} {:>12} {:>8} {:>10}",
-        "Orthogroup", "Beta_OG", "Std. Error", "t value", "p-value", "FDR q-val", "R2", "Species"
+        "{}",
+        format!(
+            "{:<12} {:>10} {:>10} {:>8} {:>12} {:>14} {:>8} {:>10}",
+            "Orthogroup", "Beta_OG", "Std. Error", "t value", "p-value", "FDR q-val", "R2", "Species"
+        )
+        .bright_cyan()
+        .bold()
     );
-    println!("{}", "-".repeat(88));
+    println!("{}", "-".repeat(92).bright_black());
 
     for hit in &summary.top_hits {
+        let q_str = format!("{:>14.4e}", hit.q_value_fdr);
+        let q_colored = if hit.q_value_fdr < 0.01 {
+            q_str.bright_green().bold()
+        } else if hit.q_value_fdr < 0.05 {
+            q_str.green()
+        } else {
+            q_str.yellow()
+        };
+
         println!(
-            "{:<12} {:>10.4} {:>10.4} {:>8.3} {:>12.4e} {:>12.4e} {:>8.4} {:>7}/{}",
-            hit.orthogroup_id,
-            hit.beta_og,
-            hit.se_og,
-            hit.t_stat,
+            "{:<12} {:>10} {:>10} {:>8} {:>12.4e} {:>14} {:>8} {:>6}/{}",
+            hit.orthogroup_id.bright_yellow().bold(),
+            format!("{:>10.4}", hit.beta_og).cyan().bold(),
+            format!("{:>10.4}", hit.se_og).white(),
+            format!("{:>8.3}", hit.t_stat).bright_cyan(),
             hit.p_value,
-            hit.q_value_fdr,
-            hit.r_squared,
-            hit.species_with_gene,
+            q_colored,
+            format!("{:>8.4}", hit.r_squared).bright_magenta().bold(),
+            hit.species_with_gene.to_string().green(),
             summary.tri_report.matched_species_count
         );
     }
-    println!("======================================================================");
+    println!("{}", "======================================================================".cyan().bold());
 }
