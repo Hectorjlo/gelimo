@@ -25,6 +25,7 @@ pub struct OrthoPipelineConfig {
     pub min_variance: f64,
     pub binary_mode: bool,
     pub log_count_mode: bool,
+    pub gfs_as_response: bool,
     pub prune: bool,
     pub fuzzy_taxonomy: bool,
 }
@@ -124,6 +125,11 @@ pub fn run_ortho_pipeline(config: &OrthoPipelineConfig) -> Result<OrthoPipelineS
     // 5. Run Parallel PGLS Engine
     let pgls_config = OrthoPglsConfig {
         lambda: lambda_used,
+        model_mode: if config.gfs_as_response {
+            crate::genomics::engine::OrthoModelMode::GfsResponse
+        } else {
+            crate::genomics::engine::OrthoModelMode::TraitResponse
+        },
     };
     let raw_results = run_ortho_pgls_parallel(
         &tri_data.tree,

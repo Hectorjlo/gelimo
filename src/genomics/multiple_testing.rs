@@ -15,6 +15,7 @@ pub struct AnnotatedOrthoResult {
     pub p_value: f64,
     pub q_value_fdr: f64,
     pub p_bonferroni: f64,
+    pub partial_r: f64,
     pub r_squared: f64,
     pub sigma2: f64,
     pub mean_copies: f64,
@@ -70,6 +71,7 @@ pub fn adjust_p_values(raw_results: Vec<OrthoPglsResult>) -> Vec<AnnotatedOrthoR
             p_value: res.p_value,
             q_value_fdr: q_values[idx],
             p_bonferroni: bonferroni_values[idx],
+            partial_r: res.partial_r,
             r_squared: res.r_squared,
             sigma2: res.sigma2,
             mean_copies: res.mean_copies,
@@ -93,14 +95,14 @@ pub fn export_ortho_results_tsv(
     // Header line
     writeln!(
         writer,
-        "Orthogroup\tBeta_OG\tStdError\tt_stat\tp_value\tq_value_fdr\tp_bonferroni\tR_squared\tSigma2\tMean_Copies\tSpecies_With_Gene"
+        "Orthogroup\tBeta_OG\tStdError\tt_stat\tp_value\tq_value_fdr\tp_bonferroni\tPartial_r\tR_squared\tSigma2\tMean_Copies\tSpecies_With_Gene"
     )
     .map_err(|e| e.to_string())?;
 
     for res in results {
         writeln!(
             writer,
-            "{}\t{:.6}\t{:.6}\t{:.4}\t{:.6e}\t{:.6e}\t{:.6e}\t{:.4}\t{:.4}\t{:.3}\t{}",
+            "{}\t{:.6}\t{:.6}\t{:.4}\t{:.6e}\t{:.6e}\t{:.6e}\t{:.4}\t{:.4}\t{:.4}\t{:.3}\t{}",
             res.orthogroup_id,
             res.beta_og,
             res.se_og,
@@ -108,6 +110,7 @@ pub fn export_ortho_results_tsv(
             res.p_value,
             res.q_value_fdr,
             res.p_bonferroni,
+            res.partial_r,
             res.r_squared,
             res.sigma2,
             res.mean_copies,
@@ -133,6 +136,7 @@ mod tests {
                 se_og: 0.1,
                 t_stat: 10.0,
                 p_value: 0.001,
+                partial_r: 0.5,
                 r_squared: 0.5,
                 sigma2: 1.0,
                 mean_copies: 2.0,
@@ -144,6 +148,7 @@ mod tests {
                 se_og: 0.2,
                 t_stat: 2.5,
                 p_value: 0.05,
+                partial_r: 0.2,
                 r_squared: 0.2,
                 sigma2: 1.0,
                 mean_copies: 1.0,
@@ -155,6 +160,7 @@ mod tests {
                 se_og: 0.2,
                 t_stat: 0.5,
                 p_value: 0.6,
+                partial_r: 0.05,
                 r_squared: 0.01,
                 sigma2: 1.0,
                 mean_copies: 1.0,
@@ -169,5 +175,6 @@ mod tests {
         assert!(adjusted[0].q_value_fdr <= adjusted[1].q_value_fdr);
         assert!(adjusted[1].q_value_fdr <= adjusted[2].q_value_fdr);
         assert!(adjusted[0].p_bonferroni <= adjusted[1].p_bonferroni);
+        assert_eq!(adjusted[0].partial_r, 0.5);
     }
 }

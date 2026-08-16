@@ -6,7 +6,9 @@ pub mod multiple_testing;
 pub mod ortho_reader;
 pub mod pipeline;
 
-pub use engine::{run_ortho_pgls_parallel, OrthoPglsConfig, OrthoPglsResult};
+pub use engine::{
+    run_ortho_pgls_parallel, OrthoModelMode, OrthoPglsConfig, OrthoPglsResult,
+};
 pub use filter::{
     filter_orthogroups, FilteredOrthoData, OrthoFilterOptions, OrthoFilterReport,
 };

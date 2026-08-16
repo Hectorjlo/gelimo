@@ -65,7 +65,10 @@ fn test_tripartite_alignment_mammals_real_data() {
         .to_response_vector("Log Adult weight (g)")
         .ok();
 
-    let pgls_config = OrthoPglsConfig { lambda: 0.8723 };
+    let pgls_config = OrthoPglsConfig {
+        lambda: 0.8723,
+        model_mode: gelimo::genomics::engine::OrthoModelMode::TraitResponse,
+    };
 
     let pgls_start = std::time::Instant::now();
     let raw_results = run_ortho_pgls_parallel(

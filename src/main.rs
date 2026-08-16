@@ -127,6 +127,10 @@ struct OrthoArgs {
     #[arg(long, default_value_t = false)]
     log_count: bool,
 
+    /// Dr. Benjamin's inverse mode: GFS as response variable (GFS ~ Phenotypes)
+    #[arg(long, default_value_t = false)]
+    gfs_as_response: bool,
+
     /// Enable automatic tree and table pruning for non-matching species
     #[arg(short = 'p', long, default_value_t = true)]
     prune: bool,
@@ -181,6 +185,7 @@ fn run_ortho_command(args: OrthoArgs) {
         min_variance: args.min_variance,
         binary_mode: args.binary,
         log_count_mode: args.log_count,
+        gfs_as_response: args.gfs_as_response,
         prune: args.prune,
         fuzzy_taxonomy: true,
     };
@@ -191,14 +196,22 @@ fn run_ortho_command(args: OrthoArgs) {
     println!("{:<18} {}", "Tree file:".bright_cyan().bold(), config.tree_path);
     println!("{:<18} {}", "Phenotype file:".bright_cyan().bold(), config.data_path);
     println!("{:<18} {}", "OrthoFinder file:".bright_cyan().bold(), config.ortho_path);
-    println!("{:<18} {}", "Response (Y):".bright_cyan().bold(), config.response_col.yellow().bold());
+    println!(
+        "{:<18} {}",
+        "Model Formula:".bright_cyan().bold(),
+        if config.gfs_as_response {
+            format!("GFS ~ {} (Dr. Benjamin's Inverse Mode)", if config.covariate_cols.is_empty() { config.response_col.clone() } else { format!("{} + {}", config.response_col, config.covariate_cols.join(" + ")) }).bright_yellow().bold()
+        } else {
+            format!("{} ~ GFS{}", config.response_col, if config.covariate_cols.is_empty() { "".to_string() } else { format!(" + {}", config.covariate_cols.join(" + ")) }).yellow().bold()
+        }
+    );
     if !config.covariate_cols.is_empty() {
         println!("{:<18} {}", "Covariates:".bright_cyan().bold(), config.covariate_cols.join(", ").yellow());
     }
     println!("{:<18} {}", "Output TSV:".bright_cyan().bold(), config.output_path.green().bold());
     println!(
         "{:<18} {}",
-        "Mode:".bright_cyan().bold(),
+        "Count Mode:".bright_cyan().bold(),
         if config.log_count_mode {
             "Log10 Count (log10(count + 1))".bright_magenta().bold()
         } else if config.binary_mode {
@@ -347,13 +360,13 @@ fn print_ortho_summary(summary: &OrthoPipelineSummary, elapsed: std::time::Durat
     println!(
         "{}",
         format!(
-            "{:<12} {:>10} {:>10} {:>8} {:>12} {:>14} {:>8} {:>10}",
-            "Orthogroup", "Beta_OG", "Std. Error", "t value", "p-value", "FDR q-val", "R2", "Species"
+            "{:<12} {:>10} {:>10} {:>8} {:>12} {:>14} {:>10} {:>8} {:>10}",
+            "Orthogroup", "Beta_OG", "Std. Error", "t value", "p-value", "FDR q-val", "Partial_r", "R2", "Species"
         )
         .bright_cyan()
         .bold()
     );
-    println!("{}", "-".repeat(92).bright_black());
+    println!("{}", "-".repeat(104).bright_black());
 
     for hit in &summary.top_hits {
         let q_str = format!("{:>14.4e}", hit.q_value_fdr);
@@ -366,13 +379,14 @@ fn print_ortho_summary(summary: &OrthoPipelineSummary, elapsed: std::time::Durat
         };
 
         println!(
-            "{:<12} {:>10} {:>10} {:>8} {:>12.4e} {:>14} {:>8} {:>6}/{}",
+            "{:<12} {:>10} {:>10} {:>8} {:>12.4e} {:>14} {:>10} {:>8} {:>6}/{}",
             hit.orthogroup_id.bright_yellow().bold(),
             format!("{:>10.4}", hit.beta_og).cyan().bold(),
             format!("{:>10.4}", hit.se_og).white(),
             format!("{:>8.3}", hit.t_stat).bright_cyan(),
             hit.p_value,
             q_colored,
+            format!("{:>10.4}", hit.partial_r).bright_green().bold(),
             format!("{:>8.4}", hit.r_squared).bright_magenta().bold(),
             hit.species_with_gene.to_string().green(),
             summary.tri_report.matched_species_count
