@@ -11,6 +11,8 @@ pub struct OrthoFilterOptions {
     pub min_variance: f64,
     /// Convert gene counts into binary presence/absence (0 vs 1).
     pub binary_mode: bool,
+    /// Apply log10(count + 1) transformation to gene counts.
+    pub log_count_mode: bool,
     /// Optional total gene counts per species for genome-size normalization (per 10k genes).
     pub species_total_genes: Option<Vec<f64>>,
 }
@@ -21,6 +23,7 @@ impl Default for OrthoFilterOptions {
             min_species_count: 5,
             min_variance: 1e-7,
             binary_mode: false,
+            log_count_mode: false,
             species_total_genes: None,
         }
     }
@@ -97,6 +100,8 @@ pub fn filter_orthogroups(
         for (i, &raw_val) in raw_slice.iter().enumerate() {
             let val = if options.binary_mode {
                 if raw_val > 0.0 { 1.0 } else { 0.0 }
+            } else if options.log_count_mode {
+                (raw_val + 1.0).log10()
             } else if let Some(ref totals) = options.species_total_genes {
                 let total = totals.get(i).copied().unwrap_or(1.0).max(1.0);
                 (raw_val / total) * 10_000.0
@@ -186,6 +191,7 @@ mod tests {
             min_species_count: 2,
             min_variance: 1e-5,
             binary_mode: false,
+            log_count_mode: false,
             species_total_genes: None,
         };
 

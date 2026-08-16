@@ -24,6 +24,7 @@ pub struct OrthoPipelineConfig {
     pub min_species_count: usize,
     pub min_variance: f64,
     pub binary_mode: bool,
+    pub log_count_mode: bool,
     pub prune: bool,
     pub fuzzy_taxonomy: bool,
 }
@@ -62,6 +63,7 @@ pub fn run_ortho_pipeline(config: &OrthoPipelineConfig) -> Result<OrthoPipelineS
         min_species_count: config.min_species_count,
         min_variance: config.min_variance,
         binary_mode: config.binary_mode,
+        log_count_mode: config.log_count_mode,
         species_total_genes: None,
     };
     let filtered_ortho = filter_orthogroups(&tri_data.orthogroups, &filter_options);

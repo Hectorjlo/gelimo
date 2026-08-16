@@ -123,6 +123,10 @@ struct OrthoArgs {
     #[arg(long, default_value_t = false)]
     binary: bool,
 
+    /// Apply log10(count + 1) transformation to gene counts
+    #[arg(long, default_value_t = false)]
+    log_count: bool,
+
     /// Enable automatic tree and table pruning for non-matching species
     #[arg(short = 'p', long, default_value_t = true)]
     prune: bool,
@@ -176,6 +180,7 @@ fn run_ortho_command(args: OrthoArgs) {
         min_species_count: args.min_species,
         min_variance: args.min_variance,
         binary_mode: args.binary,
+        log_count_mode: args.log_count,
         prune: args.prune,
         fuzzy_taxonomy: true,
     };
@@ -194,7 +199,9 @@ fn run_ortho_command(args: OrthoArgs) {
     println!(
         "{:<18} {}",
         "Mode:".bright_cyan().bold(),
-        if config.binary_mode {
+        if config.log_count_mode {
+            "Log10 Count (log10(count + 1))".bright_magenta().bold()
+        } else if config.binary_mode {
             "Binary (Presence/Absence)".magenta().bold()
         } else {
             "Continuous (Gene Count / CNV)".bright_magenta().bold()

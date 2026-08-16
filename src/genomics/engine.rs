@@ -279,6 +279,7 @@ mod tests {
             min_species_count: 1,
             min_variance: 1e-6,
             binary_mode: false,
+            log_count_mode: false,
             species_total_genes: None,
         };
         let filtered = filter_orthogroups(&table, &filter_opts);

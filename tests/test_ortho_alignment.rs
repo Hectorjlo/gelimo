@@ -38,6 +38,7 @@ fn test_tripartite_alignment_mammals_real_data() {
         min_species_count: 10,
         min_variance: 1e-5,
         binary_mode: false,
+        log_count_mode: false,
         species_total_genes: None,
     };
 
