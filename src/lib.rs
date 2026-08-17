@@ -7,6 +7,8 @@ pub mod genomics;
 pub mod math;
 pub mod opt;
 pub mod pipeline;
+#[cfg(feature = "r-bindings")]
+pub mod r_bindings;
 pub mod stats;
 pub mod tree;
 

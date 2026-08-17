@@ -41,6 +41,7 @@ pub struct OrthoPipelineSummary {
     pub significant_bonferroni: usize,
     pub lambda_used: f64,
     pub top_hits: Vec<AnnotatedOrthoResult>,
+    pub all_results: Vec<AnnotatedOrthoResult>,
 }
 
 /// Executes the full end-to-end genomic PGLS pipeline across all orthogroups.
@@ -69,7 +70,7 @@ pub fn run_ortho_pipeline(config: &OrthoPipelineConfig) -> Result<OrthoPipelineS
     };
     let filtered_ortho = filter_orthogroups(&tri_data.orthogroups, &filter_options);
 
-    // 3. Extract Response Y and Covariates Z
+    // 3. Extract Phenotype Response Y and Covariates Z
     let comp_helper = ComparativeData {
         tree: tri_data.tree.clone(),
         species_names: tri_data.species_names.clone(),
@@ -79,7 +80,7 @@ pub fn run_ortho_pipeline(config: &OrthoPipelineConfig) -> Result<OrthoPipelineS
 
     let y = comp_helper
         .to_response_vector(&config.response_col)
-        .map_err(|e| format!("Failed to extract response vector Y: {}", e))?;
+        .map_err(|e| format!("Failed to extract response variable '{}': {}", config.response_col, e))?;
 
     let cov = if !config.covariate_cols.is_empty() {
         let cov_refs: Vec<&str> = config.covariate_cols.iter().map(|s| s.as_str()).collect();
@@ -142,15 +143,17 @@ pub fn run_ortho_pipeline(config: &OrthoPipelineConfig) -> Result<OrthoPipelineS
     // 6. Multiple Testing FDR & Bonferroni Corrections
     let annotated_results = adjust_p_values(raw_results);
 
-    // 7. Export TSV Results
-    export_ortho_results_tsv(&annotated_results, &config.output_path)?;
+    // 7. Export TSV Results (if output path provided)
+    if !config.output_path.trim().is_empty() {
+        export_ortho_results_tsv(&annotated_results, &config.output_path)?;
+    }
 
     // 8. Statistics Summary
     let total_analyzed = annotated_results.len();
     let significant_fdr_05 = annotated_results.iter().filter(|r| r.q_value_fdr < 0.05).count();
     let significant_fdr_01 = annotated_results.iter().filter(|r| r.q_value_fdr < 0.01).count();
     let significant_bonferroni = annotated_results.iter().filter(|r| r.p_bonferroni < 0.05).count();
-    let top_hits = annotated_results.into_iter().take(10).collect();
+    let top_hits = annotated_results.iter().take(10).cloned().collect();
 
     Ok(OrthoPipelineSummary {
         tri_report: tri_data.report,
@@ -161,5 +164,6 @@ pub fn run_ortho_pipeline(config: &OrthoPipelineConfig) -> Result<OrthoPipelineS
         significant_bonferroni,
         lambda_used,
         top_hits,
+        all_results: annotated_results,
     })
 }

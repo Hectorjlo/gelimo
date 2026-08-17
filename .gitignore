@@ -9,3 +9,12 @@
 
 # VSCode
 .vscode/
+
+# R build artifacts
+src/*.o
+src/*.so
+src/*.dll
+src/*.dylib
+.Rproj.user
+.Rhistory
+.RData

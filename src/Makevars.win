@@ -1,0 +1,18 @@
+TARGET = $(CURDIR)/../target
+STATLIB = $(TARGET)/release/libgelimo.a
+PKG_LIBS = -L$(TARGET)/release -lgelimo -lws2_32 -luserenv -lbcrypt -lntdll
+
+all: C_clean $(SHLIB)
+
+.PHONY: all C_clean clean $(STATLIB)
+
+$(SHLIB): $(STATLIB)
+
+$(STATLIB):
+	cargo build --release --features r-bindings --manifest-path=$(CURDIR)/../Cargo.toml
+
+C_clean:
+	rm -Rf $(SHLIB) $(OBJECTS)
+
+clean:
+	rm -Rf $(SHLIB) $(OBJECTS)

@@ -1,0 +1,14 @@
+Package: gelimo
+Title: High-Performance Generalized Phylogenetic Linear Models in Rust
+Version: 0.1.0
+Authors@R: person("Héctor Jesús", "López Ordaz", email = "hectorjl@lcg.unam.mx", role = c("aut", "cre"))
+Description: High-throughput Generalized Phylogenetic Linear Models (PGLS) engine
+    compatible with 'caper' and optimized with Rust and Rayon for genome-wide
+    OrthoFinder orthogroup screening.
+License: MIT
+Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.1
+SystemRequirements: Cargo (Rust's package manager)
+URL: https://github.com/Hectorjlo/gelimo
+BugReports: https://github.com/Hectorjlo/gelimo/issues
