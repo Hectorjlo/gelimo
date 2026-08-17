@@ -112,17 +112,14 @@ pub fn solve_gls_linear(
                 total_w += w_c;
 
                 weighted_zy += w_c * ws.node_zy[c];
-                for col in 0..p {
-                    weighted_zx[col] += w_c * ws.node_zx[c][col];
+                for (zx_val, &c_val) in weighted_zx.iter_mut().zip(&ws.node_zx[c]) {
+                    *zx_val += w_c * c_val;
                 }
             }
 
             let v_u = 1.0 / total_w.max(1e-15);
             let zy_u = weighted_zy * v_u;
-            let mut zx_u = vec![0.0; p];
-            for col in 0..p {
-                zx_u[col] = weighted_zx[col] * v_u;
-            }
+            let zx_u: Vec<f64> = weighted_zx.iter().map(|&w| w * v_u).collect();
 
             // Accumulate independent contrasts to (X^T V^-1 X) and (X^T V^-1 Y)
             for &c in &node.children {

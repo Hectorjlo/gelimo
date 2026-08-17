@@ -27,10 +27,8 @@ pub fn apply_pagel_lambda(vcv: &Mat<f64>, lambda: f64) -> Mat<f64> {
 pub fn apply_pagel_lambda_tree(tree: &PhyloTree, lambda: f64) -> PhyloTree {
     let mut new_tree = tree.clone();
     for node in &mut new_tree.nodes {
-        if !node.is_tip && node.id != tree.root {
-            if let Some(b) = node.branch_length {
-                node.branch_length = Some(b * lambda);
-            }
+        if !node.is_tip && node.id != tree.root && node.branch_length.is_some() {
+            node.branch_length = node.branch_length.map(|b| b * lambda);
         }
     }
     new_tree

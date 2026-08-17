@@ -3,5 +3,6 @@
 pub mod node;
 pub mod parser;
 
-pub use node::{Node, PhyloTree};
+pub use crate::math::pagel::apply_pagel_lambda_tree;
+pub use node::{normalize_species_name, Node, PhyloTree};
 pub use parser::parse_newick;

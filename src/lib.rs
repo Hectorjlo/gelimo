@@ -10,6 +10,7 @@ pub mod pipeline;
 pub mod stats;
 pub mod tree;
 
+pub use data::{ComparativeData, ComparativeDataOptions, PruneReport};
 pub use genomics::{
     adjust_p_values, align_tripartite, export_ortho_results_tsv, filter_orthogroups,
     read_orthogroup_gene_counts, run_ortho_pgls_parallel, run_ortho_pipeline,
@@ -17,5 +18,7 @@ pub use genomics::{
     OrthoGeneCountTable, OrthoModelMode, OrthoPipelineConfig, OrthoPipelineSummary, OrthoPglsConfig,
     OrthoPglsResult, TripartiteComparativeData, TripartiteReport,
 };
+pub use math::{apply_pagel_lambda, apply_pagel_lambda_tree, compute_vcv, solve_gls, GlsResult};
 pub use opt::{grid_search_lambda_parallel, optimize_pagel_lambda, LambdaOptResult};
 pub use pipeline::{run_pgls_pipeline, PglsConfig, PglsSummary};
+pub use tree::{normalize_species_name, parse_newick, Node, PhyloTree};

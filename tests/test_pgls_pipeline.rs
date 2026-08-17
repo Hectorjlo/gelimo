@@ -53,6 +53,6 @@ fn test_full_pgls_pipeline_3sp() {
     let r2 = compute_r_squared(&gls_res, &x_star, &y_star);
     let aic = compute_aic(gls_res.log_likelihood, 3); // 2 betas + 1 sigma2
 
-    assert!(r2 >= 0.0 && r2 <= 1.0);
+    assert!((0.0..=1.0).contains(&r2));
     assert!(aic.is_finite());
 }

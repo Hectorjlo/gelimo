@@ -291,7 +291,7 @@ impl ComparativeData {
         let n = self.data.height();
         let mut y = faer::Mat::zeros(n, 1);
         let vals = extract_f64_values(col, n)
-            .map_err(|e| ComparativeDataError::PruningError(e))?;
+            .map_err(ComparativeDataError::PruningError)?;
 
         for i in 0..n {
             y[(i, 0)] = vals[i];
@@ -315,7 +315,7 @@ impl ComparativeData {
         for (j, &col_name) in predictor_cols.iter().enumerate() {
             let col = self.data.column(col_name)?;
             let vals = extract_f64_values(col, n)
-                .map_err(|e| ComparativeDataError::PruningError(e))?;
+                .map_err(ComparativeDataError::PruningError)?;
             for i in 0..n {
                 x[(i, j + 1)] = vals[i];
             }
@@ -333,10 +333,8 @@ fn extract_f64_values(col: &polars::frame::column::Column, n: usize) -> Result<V
     if let Ok(ca) = col.i64() {
         return Ok((0..n).map(|i| ca.get(i).unwrap_or(0) as f64).collect());
     }
-    if let Ok(cast_col) = col.cast(&polars::datatypes::DataType::Float64) {
-        if let Ok(ca) = cast_col.f64() {
-            return Ok((0..n).map(|i| ca.get(i).unwrap_or(0.0)).collect());
-        }
+    if let Ok(ca) = col.cast(&polars::datatypes::DataType::Float64).and_then(|c| c.f64().cloned()) {
+        return Ok((0..n).map(|i| ca.get(i).unwrap_or(0.0)).collect());
     }
     if let Ok(ca) = col.str() {
         return Ok((0..n)

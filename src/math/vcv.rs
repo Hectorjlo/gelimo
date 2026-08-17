@@ -8,14 +8,14 @@ use crate::tree::PhyloTree;
 // ponytail: single bottom-up path tracing for MRCA distance computation
 fn compute_root_distances(tree: &PhyloTree) -> Vec<f64> {
     let mut dists = vec![0.0; tree.nodes.len()];
-    for i in 0..tree.nodes.len() {
+    for (i, d) in dists.iter_mut().enumerate() {
         let mut curr = i;
         let mut sum = 0.0;
         while let Some(parent_idx) = tree.nodes[curr].parent {
             sum += tree.nodes[curr].branch_length.unwrap_or(0.0);
             curr = parent_idx;
         }
-        dists[i] = sum;
+        *d = sum;
     }
     dists
 }

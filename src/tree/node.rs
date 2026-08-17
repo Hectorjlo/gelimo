@@ -43,6 +43,12 @@ impl PhyloTree {
             .collect()
     }
 
+    /// Applies Pagel's lambda transformation to this tree by scaling internal branch lengths.
+    // ponytail: tree branch length lambda transformation
+    pub fn apply_lambda(&self, lambda: f64) -> PhyloTree {
+        crate::math::pagel::apply_pagel_lambda_tree(self, lambda)
+    }
+
     /// Prunes the tree, keeping only tips whose normalized name is in `species_to_keep`.
     /// Single-child internal nodes resulting from pruning are collapsed.
     //  Clean recursive node pruning and 1-child node collapsing
