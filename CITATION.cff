@@ -1,0 +1,22 @@
+cff-version: 1.2.0
+message: "If you use gelimo in your research, please cite it as below."
+title: "gelimo: High-Throughput Generalized Phylogenetic Linear Models in Rust and R"
+abstract: "An ultra-fast, memory-efficient engine for Phylogenetic Generalized Least Squares (PGLS) designed for genome-wide orthogroup screening and comparative evolutionary genomics."
+authors:
+  - family-names: "López-Ordaz"
+    given-names: "Héctor Jesús"
+    email: "hectorjl@lcg.unam.mx"
+    affiliation: "Licenciatura en Ciencias Genómicas, Universidad Nacional Autónoma de México (UNAM)"
+version: "0.1.0"
+date-released: "2026-08-18"
+license: "MIT"
+repository-code: "https://github.com/Hectorjlo/gelimo"
+keywords:
+  - "phylogenetics"
+  - "PGLS"
+  - "comparative genomics"
+  - "orthofinder"
+  - "rust"
+  - "R"
+  - "evolutionary biology"
+  - "bioinformatics"

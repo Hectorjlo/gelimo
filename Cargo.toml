@@ -3,7 +3,7 @@ name = "gelimo"
 version = "0.1.0"
 edition = "2024"
 default-run = "gelimo"
-authors = ["Héctor Jesús López Ordaz <hectorjl@lcg.unam.mx>"]
+authors = ["Héctor Jesús López-Ordaz <hectorjl@lcg.unam.mx>"]
 description = "Generalized Phylogenetic Linear Models engine in Rust"
 
 [lib]

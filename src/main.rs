@@ -20,7 +20,7 @@ fn cli_styles() -> Styles {
 #[derive(Parser, Debug)]
 #[command(
     name = "gelimo",
-    author = "Hector Jesus Lopez Ordaz <hectorjl@lcg.unam.mx>",
+    author = "Héctor Jesús López-Ordaz <hectorjl@lcg.unam.mx>",
     version = "0.1.0",
     about = "Generalized Phylogenetic Linear Models and High-Throughput Genomic Screening Engine in Rust",
     long_about = "High-performance PGLS engine compatible with R caper and optimized for genome-wide orthogroup analysis with Rayon.",
