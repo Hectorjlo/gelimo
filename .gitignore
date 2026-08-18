@@ -1,14 +1,15 @@
-# Rust target dir
+# Rust build artifacts
 /target
 
-# Agent 
+# Internal agent & scratchpad
 /agy
 
-# User tests
+# Heavy test datasets & scratch folders
 /user
 
-# VSCode
+# Editor & IDE configs
 .vscode/
+.idea/
 
 # R build artifacts
 src/*.o
