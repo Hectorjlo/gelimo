@@ -27,6 +27,10 @@ fn cli_styles() -> Styles {
     styles = cli_styles()
 )]
 struct Cli {
+    /// Number of parallel CPU threads (default: all available logical cores)
+    #[arg(short = 'T', long, global = true)]
+    threads: Option<usize>,
+
     #[command(subcommand)]
     command: Commands,
 }
@@ -138,6 +142,12 @@ struct OrthoArgs {
 
 fn main() {
     let cli = Cli::parse();
+
+    if let Some(threads) = cli.threads {
+        if threads > 0 {
+            let _ = rayon::ThreadPoolBuilder::new().num_threads(threads).build_global();
+        }
+    }
 
     match cli.command {
         Commands::Fit(args) => run_fit_command(args),

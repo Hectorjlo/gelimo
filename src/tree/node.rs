@@ -156,6 +156,36 @@ impl PhyloTree {
             tips,
         })
     }
+
+    /// Serializes the phylogenetic tree back into standard Newick format string.
+    // ponytail: recursive zero-dependency Newick tree serialization
+    pub fn to_newick(&self) -> String {
+        let mut buf = String::new();
+        self.format_node_newick(self.root, &mut buf);
+        buf.push(';');
+        buf
+    }
+
+    fn format_node_newick(&self, node_idx: usize, buf: &mut String) {
+        let node = &self.nodes[node_idx];
+        if !node.children.is_empty() {
+            buf.push('(');
+            for (i, &child_idx) in node.children.iter().enumerate() {
+                if i > 0 {
+                    buf.push(',');
+                }
+                self.format_node_newick(child_idx, buf);
+            }
+            buf.push(')');
+        }
+        if let Some(ref name) = node.name {
+            buf.push_str(name);
+        }
+        if let Some(bl) = node.branch_length {
+            use std::fmt::Write;
+            let _ = write!(buf, ":{}", bl);
+        }
+    }
 }
 
 /// Normalizes a species name by replacing spaces with underscores and stripping common suffixes.
@@ -194,5 +224,16 @@ mod tests {
         // SpB branch length should be collapsed: 1.0 (from SpB) + 1.0 (from internal node) = 2.0
         let spb_node = &pruned.nodes[pruned.tips[0]];
         assert_eq!(spb_node.branch_length, Some(2.0));
+    }
+
+    #[test]
+    fn test_tree_to_newick_roundtrip() {
+        let input = "((SpA:1.5,SpB:2.5):0.5,SpC:3);";
+        let tree = parse_newick(input).unwrap();
+        let newick_out = tree.to_newick();
+        
+        let roundtrip_tree = parse_newick(&newick_out).unwrap();
+        assert_eq!(roundtrip_tree.tips.len(), 3);
+        assert_eq!(roundtrip_tree.normalized_tip_names(), vec!["SpA", "SpB", "SpC"]);
     }
 }
