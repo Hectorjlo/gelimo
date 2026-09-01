@@ -123,6 +123,30 @@ struct OrthoArgs {
     #[arg(long, default_value_t = 1e-6)]
     min_variance: f64,
 
+    /// Minimum species prevalence proportion (e.g. 0.8) or percentage (e.g. 80)
+    #[arg(long)]
+    min_prevalence: Option<f64>,
+
+    /// Minimum interdecile count spread (P95 - P05) across species
+    #[arg(long)]
+    min_count_spread: Option<f64>,
+
+    /// Minimum absolute count range (max - min) across species
+    #[arg(long)]
+    min_count_range: Option<f64>,
+
+    /// Maximum number of top most variable orthogroups to retain
+    #[arg(long)]
+    top_ogs: Option<usize>,
+
+    /// Save the pruned phylogenetic tree containing only matched species to Newick file
+    #[arg(long)]
+    save_tree: Option<String>,
+
+    /// Evaluate multiple count spread thresholds (e.g. "3,5,10") and report power comparison
+    #[arg(long, value_delimiter = ',')]
+    eval_ranges: Option<Vec<f64>>,
+
     /// Convert gene counts to binary presence/absence (0 vs 1)
     #[arg(long, default_value_t = false)]
     binary: bool,
@@ -172,10 +196,24 @@ fn run_fit_command(args: FitArgs) {
         solver_mode,
     };
 
+    println!("{}", "======================================================================".cyan().bold());
+    println!("{}", "gelimo v0.1.0 - Generalized Phylogenetic Linear Models Engine".bright_white().bold());
+    println!("{}", "======================================================================".cyan().bold());
+    println!("{:<18} {}", "Tree file:".bright_cyan().bold(), config.tree_path);
+    println!("{:<18} {}", "Data file:".bright_cyan().bold(), config.data_path);
+    println!("{:<18} {}", "Response (Y):".bright_cyan().bold(), config.response_col.yellow().bold());
+    println!("{:<18} {}", "Predictors (X):".bright_cyan().bold(), config.predictor_cols.join(", ").yellow());
+    println!("{:<18} {:?}", "Solver Mode:".bright_cyan().bold(), config.solver_mode);
+    println!();
+    println!("{}", "Fitting PGLS model...".bright_black().italic());
+
+    let _start = std::time::Instant::now();
     match run_pgls_pipeline(&config) {
-        Ok(summary) => print_fit_summary(&config, &summary),
+        Ok(summary) => {
+            print_fit_summary(&config, &summary);
+        }
         Err(err) => {
-            eprintln!("{} {}", "Error running PGLS model:".red().bold(), err);
+            eprintln!("{} {}", "Error fitting PGLS model:".red().bold(), err);
             std::process::exit(1);
         }
     }
@@ -192,7 +230,13 @@ fn run_ortho_command(args: OrthoArgs) {
         lambda: args.lambda,
         optimize_lambda: args.opt_lambda,
         min_species_count: args.min_species,
+        min_prevalence: args.min_prevalence,
         min_variance: args.min_variance,
+        min_count_spread: args.min_count_spread,
+        min_count_range: args.min_count_range,
+        top_ogs: args.top_ogs,
+        save_tree_path: args.save_tree,
+        eval_ranges: args.eval_ranges,
         binary_mode: args.binary,
         log_count_mode: args.log_count,
         gfs_as_response: args.gfs_as_response,
