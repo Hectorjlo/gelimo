@@ -207,6 +207,14 @@ pub fn run_ortho_pipeline(config: &OrthoPipelineConfig) -> Result<OrthoPipelineS
                     significant_fdr_01: sig_01,
                     significant_bonferroni: sig_bonf,
                 });
+            } else {
+                eval_ranges_summary.push(MultiThresholdEntry {
+                    threshold_spread: spread_thresh,
+                    retained_ogs: 0,
+                    significant_fdr_05: 0,
+                    significant_fdr_01: 0,
+                    significant_bonferroni: 0,
+                });
             }
         }
     }
