@@ -393,17 +393,64 @@ fn print_fit_summary(config: &PglsConfig, summary: &PglsSummary) {
 }
 
 fn print_ortho_summary(summary: &OrthoPipelineSummary, elapsed: std::time::Duration) {
+    let raw_ogs = summary.filter_report.initial_orthogroups;
+    let retained = summary.filter_report.retained_orthogroups;
+    let pct = |count: usize| -> String {
+        if raw_ogs > 0 {
+            format!("{:>6.2}%", (count as f64 / raw_ogs as f64) * 100.0)
+        } else {
+            "  0.00%".to_string()
+        }
+    };
+
     println!();
     println!("{}", "--- Alignment & QC Filtering Summary ---".bright_yellow().bold());
-    println!("{:<28} {}", "Matched species count:".bright_white(), summary.tri_report.matched_species_count.to_string().green().bold());
-    println!("{:<28} {}", "Taxonomy fuzzy matches:".bright_white(), summary.tri_report.taxonomy_matches.len().to_string().green());
-    println!("{:<28} {}", "Total raw orthogroups:".bright_white(), summary.filter_report.initial_orthogroups);
-    println!("{:<28} {}", "Retained QC orthogroups:".bright_white(), summary.filter_report.retained_orthogroups.to_string().bright_green().bold());
-    println!("{:<28} {}", "Discarded invariant:".bright_white(), summary.filter_report.discarded_invariant.to_string().yellow());
-    println!("{:<28} {}", "Discarded low prevalence:".bright_white(), summary.filter_report.discarded_low_prevalence.to_string().yellow());
-    println!("{:<28} {}", "Discarded low variance:".bright_white(), summary.filter_report.discarded_low_variance.to_string().yellow());
-    println!("{:<28} {}", "Pagel's lambda applied:".bright_white(), format!("{:.4}", summary.lambda_used).cyan().bold());
-    println!("{:<28} {}", "Total execution time:".bright_white(), format!("{:.2?}", elapsed).bright_green().bold());
+    println!("{:<32} {}", "Input Phenotype Species:".bright_white(), summary.tri_report.pheno_rows_count.to_string().cyan());
+    println!("{:<32} {}", "Input Tree Tips:".bright_white(), summary.tri_report.tree_tips_count.to_string().cyan());
+    println!("{:<32} {}", "Input OrthoFinder Species:".bright_white(), summary.tri_report.orthogroup_species_count.to_string().cyan());
+    println!("{:<32} {}", "Matched / Aligned Species:".bright_white(), format!("{} (Fuzzy matches: {})", summary.tri_report.matched_species_count, summary.tri_report.taxonomy_matches.len()).green().bold());
+    println!();
+    println!("{:<32} {}", "Total Raw Orthogroups:".bright_white(), raw_ogs.to_string().cyan().bold());
+    println!("{:<32} {}", "Retained QC Orthogroups:".bright_white(), format!("{} ({})", retained, pct(retained)).bright_green().bold());
+    println!("{:<32} {}", "  - Discarded invariant:".bright_white(), format!("{} ({})", summary.filter_report.discarded_invariant, pct(summary.filter_report.discarded_invariant)).yellow());
+    println!("{:<32} {}", "  - Discarded low prevalence:".bright_white(), format!("{} ({})", summary.filter_report.discarded_low_prevalence, pct(summary.filter_report.discarded_low_prevalence)).yellow());
+    println!("{:<32} {}", "  - Discarded low variance:".bright_white(), format!("{} ({})", summary.filter_report.discarded_low_variance, pct(summary.filter_report.discarded_low_variance)).yellow());
+    if summary.filter_report.discarded_low_range > 0 {
+        println!("{:<32} {}", "  - Discarded low range:".bright_white(), format!("{} ({})", summary.filter_report.discarded_low_range, pct(summary.filter_report.discarded_low_range)).yellow());
+    }
+    if summary.filter_report.discarded_low_spread > 0 {
+        println!("{:<32} {}", "  - Discarded low spread:".bright_white(), format!("{} ({})", summary.filter_report.discarded_low_spread, pct(summary.filter_report.discarded_low_spread)).yellow());
+    }
+    if summary.filter_report.discarded_top_ogs > 0 {
+        println!("{:<32} {}", "  - Discarded by top-N limit:".bright_white(), format!("{} ({})", summary.filter_report.discarded_top_ogs, pct(summary.filter_report.discarded_top_ogs)).yellow());
+    }
+    println!("{:<32} {}", "Pagel's lambda applied:".bright_white(), format!("{:.4}", summary.lambda_used).cyan().bold());
+    println!("{:<32} {}", "Total execution time:".bright_white(), format!("{:.2?}", elapsed).bright_green().bold());
+
+    if !summary.eval_ranges_summary.is_empty() {
+        println!();
+        println!("{}", "--- Multi-Threshold Power & FDR Summary ---".bright_yellow().bold());
+        println!(
+            "{}",
+            format!(
+                "{:<22} {:>14} {:>24} {:>24}",
+                "Threshold (Spread >=)", "Retained OGs", "Signif (FDR q < 0.05)", "Signif (FDR q < 0.01)"
+            )
+            .bright_cyan()
+            .bold()
+        );
+        println!("{}", "-".repeat(88).bright_black());
+        for entry in &summary.eval_ranges_summary {
+            println!(
+                "{:<22} {:>14} {:>24} {:>24}",
+                format!("Spread >= {:.1}", entry.threshold_spread).bright_white().bold(),
+                entry.retained_ogs.to_string().cyan(),
+                entry.significant_fdr_05.to_string().bright_green().bold(),
+                entry.significant_fdr_01.to_string().green()
+            );
+        }
+    }
+
     println!();
     println!("{}", "--- Multiple Testing Significance Summary ---".bright_yellow().bold());
     println!("{:<40} {}", "Significant OGs (FDR q < 0.05):".bright_white(), summary.significant_fdr_05.to_string().bright_green().bold());

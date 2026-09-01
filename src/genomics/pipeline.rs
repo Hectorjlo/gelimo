@@ -36,6 +36,16 @@ pub struct OrthoPipelineConfig {
     pub fuzzy_taxonomy: bool,
 }
 
+/// Multi-threshold evaluation summary entry.
+#[derive(Debug, Clone)]
+pub struct MultiThresholdEntry {
+    pub threshold_spread: f64,
+    pub retained_ogs: usize,
+    pub significant_fdr_05: usize,
+    pub significant_fdr_01: usize,
+    pub significant_bonferroni: usize,
+}
+
 /// Summary report of the genomic PGLS pipeline execution.
 #[derive(Debug, Clone)]
 pub struct OrthoPipelineSummary {
@@ -48,6 +58,7 @@ pub struct OrthoPipelineSummary {
     pub lambda_used: f64,
     pub top_hits: Vec<AnnotatedOrthoResult>,
     pub all_results: Vec<AnnotatedOrthoResult>,
+    pub eval_ranges_summary: Vec<MultiThresholdEntry>,
 }
 
 /// Executes the full end-to-end genomic PGLS pipeline across all orthogroups.
@@ -65,6 +76,18 @@ pub fn run_ortho_pipeline(config: &OrthoPipelineConfig) -> Result<OrthoPipelineS
         &pheno_options,
         &config.ortho_path,
     )?;
+
+    // 1b. Save pruned tree if requested
+    if let Some(ref save_path) = config.save_tree_path {
+        if !save_path.trim().is_empty() {
+            if let Some(parent) = std::path::Path::new(save_path).parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            let newick_str = tri_data.tree.to_newick();
+            std::fs::write(save_path, newick_str)
+                .map_err(|e| format!("Failed to write pruned tree to '{}': {}", save_path, e))?;
+        }
+    }
 
     // 2. QC Filtering
     let filter_options = OrthoFilterOptions {
@@ -158,7 +181,37 @@ pub fn run_ortho_pipeline(config: &OrthoPipelineConfig) -> Result<OrthoPipelineS
         export_ortho_results_tsv(&annotated_results, &config.output_path)?;
     }
 
-    // 8. Statistics Summary
+    // 8. Multi-Threshold Evaluation (if eval_ranges provided)
+    let mut eval_ranges_summary = Vec::new();
+    if let Some(ref ranges) = config.eval_ranges {
+        for &spread_thresh in ranges {
+            let mut range_filter_opts = filter_options.clone();
+            range_filter_opts.min_count_spread = Some(spread_thresh);
+            let range_filtered = filter_orthogroups(&tri_data.orthogroups, &range_filter_opts);
+            if range_filtered.num_orthogroups() > 0 {
+                let range_raw = run_ortho_pgls_parallel(
+                    &tri_data.tree,
+                    &y,
+                    cov.as_ref(),
+                    &range_filtered,
+                    &pgls_config,
+                )?;
+                let range_adj = adjust_p_values(range_raw);
+                let sig_05 = range_adj.iter().filter(|r| r.q_value_fdr < 0.05).count();
+                let sig_01 = range_adj.iter().filter(|r| r.q_value_fdr < 0.01).count();
+                let sig_bonf = range_adj.iter().filter(|r| r.p_bonferroni < 0.05).count();
+                eval_ranges_summary.push(MultiThresholdEntry {
+                    threshold_spread: spread_thresh,
+                    retained_ogs: range_adj.len(),
+                    significant_fdr_05: sig_05,
+                    significant_fdr_01: sig_01,
+                    significant_bonferroni: sig_bonf,
+                });
+            }
+        }
+    }
+
+    // 9. Statistics Summary
     let total_analyzed = annotated_results.len();
     let significant_fdr_05 = annotated_results.iter().filter(|r| r.q_value_fdr < 0.05).count();
     let significant_fdr_01 = annotated_results.iter().filter(|r| r.q_value_fdr < 0.01).count();
@@ -175,5 +228,6 @@ pub fn run_ortho_pipeline(config: &OrthoPipelineConfig) -> Result<OrthoPipelineS
         lambda_used,
         top_hits,
         all_results: annotated_results,
+        eval_ranges_summary,
     })
 }

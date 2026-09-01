@@ -22,7 +22,12 @@ fn r_pgls_orthogroups(
     lambda: Nullable<f64>,
     opt_lambda: Nullable<bool>,
     min_species: Nullable<i32>,
+    min_prevalence: Nullable<f64>,
     min_variance: Nullable<f64>,
+    min_count_spread: Nullable<f64>,
+    min_count_range: Nullable<f64>,
+    top_ogs: Nullable<i32>,
+    save_tree: Nullable<String>,
     prune: Nullable<bool>,
 ) -> extendr_api::Result<Robj> {
     let covariate_cols = covariates.into_option().unwrap_or_default();
@@ -31,8 +36,13 @@ fn r_pgls_orthogroups(
     let gfs_resp = gfs_as_response.into_option().unwrap_or(false);
     let lam = lambda.into_option().unwrap_or(1.0);
     let optimize_lambda = opt_lambda.into_option().unwrap_or(false);
-    let min_species_count = min_species.into_option().unwrap_or(5).max(1) as usize;
+    let min_species_count = min_species.into_option().unwrap_or(5).max(0) as usize;
+    let min_prev = min_prevalence.into_option();
     let min_var = min_variance.into_option().unwrap_or(1e-6);
+    let min_spread = min_count_spread.into_option();
+    let min_range = min_count_range.into_option();
+    let top_n = top_ogs.into_option().map(|n| n.max(1) as usize);
+    let save_tree_path = save_tree.into_option();
     let prune_data = prune.into_option().unwrap_or(true);
 
     let config = OrthoPipelineConfig {
@@ -45,7 +55,13 @@ fn r_pgls_orthogroups(
         lambda: lam,
         optimize_lambda,
         min_species_count,
+        min_prevalence: min_prev,
         min_variance: min_var,
+        min_count_spread: min_spread,
+        min_count_range: min_range,
+        top_ogs: top_n,
+        save_tree_path,
+        eval_ranges: None,
         binary_mode: false,
         log_count_mode,
         gfs_as_response: gfs_resp,

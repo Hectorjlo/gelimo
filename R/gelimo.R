@@ -14,7 +14,12 @@
 #' @param lambda Numeric. Pagel's lambda parameter (default: 1.0).
 #' @param opt_lambda Logical. If TRUE, optimizes Pagel's lambda by Maximum Likelihood on baseline trait model.
 #' @param min_species Integer. Minimum species count possessing at least 1 gene copy (default: 5).
+#' @param min_prevalence Numeric. Minimum species prevalence proportion (e.g. 0.80) or percentage (80).
 #' @param min_variance Numeric. Minimum variance threshold for QC filtering (default: 1e-6).
+#' @param min_count_spread Numeric. Minimum interdecile count spread (P95 - P05) across species.
+#' @param min_count_range Numeric. Minimum absolute count range (max - min) across species.
+#' @param top_ogs Integer. Maximum number of top most variable orthogroups to retain.
+#' @param save_tree Character. Optional path to save the pruned phylogenetic tree as Newick file.
 #' @param prune Logical. If TRUE, automatically prunes non-matching tree tips and table rows (default: TRUE).
 #'
 #' @return A data.frame sorted by FDR q-value containing PGLS coefficients, p-values, FDR q-values, Bonferroni corrections, and Partial r effect sizes.
@@ -29,7 +34,9 @@
 #'   response = "Maximum longevity (yrs)",
 #'   covariates = "Log Adult weight (g)",
 #'   log_count = TRUE,
-#'   opt_lambda = TRUE
+#'   opt_lambda = TRUE,
+#'   min_prevalence = 0.80,
+#'   save_tree = "pruned_tree.nwk"
 #' )
 #' head(results)
 #' }
@@ -45,7 +52,12 @@ pgls_orthogroups <- function(
     lambda = 1.0,
     opt_lambda = FALSE,
     min_species = 5L,
+    min_prevalence = NULL,
     min_variance = 1e-6,
+    min_count_spread = NULL,
+    min_count_range = NULL,
+    top_ogs = NULL,
+    save_tree = NULL,
     prune = TRUE) {
   
   if (!file.exists(tree)) stop("Phylogenetic tree file not found: ", tree, call. = FALSE)
@@ -66,7 +78,12 @@ pgls_orthogroups <- function(
     lambda = as.numeric(lambda),
     opt_lambda = as.logical(opt_lambda),
     min_species = as.integer(min_species),
+    min_prevalence = if (!is.null(min_prevalence)) as.numeric(min_prevalence) else NULL,
     min_variance = as.numeric(min_variance),
+    min_count_spread = if (!is.null(min_count_spread)) as.numeric(min_count_spread) else NULL,
+    min_count_range = if (!is.null(min_count_range)) as.numeric(min_count_range) else NULL,
+    top_ogs = if (!is.null(top_ogs)) as.integer(top_ogs) else NULL,
+    save_tree = if (!is.null(save_tree)) as.character(save_tree) else NULL,
     prune = as.logical(prune)
   )
 }
