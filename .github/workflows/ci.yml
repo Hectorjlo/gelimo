@@ -21,7 +21,7 @@ jobs:
           components: clippy
 
       - name: Ejecutar tests
-        run: cargo test --no-default-features
+        run: cargo test
 
       - name: Ejecutar Clippy
-        run: cargo clippy --all-features -- -D warnings
+        run: cargo clippy --all-targets -- -D warnings
