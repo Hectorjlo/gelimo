@@ -1,1 +1,27 @@
+name: CI
 
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+
+jobs:
+  test-and-lint:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout del código
+        uses: actions/checkout@v4
+
+      - name: Instalar toolchain Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Ejecutar tests
+        run: cargo test --all-features
+
+      - name: Ejecutar Clippy
+        run: cargo clippy --all-features -- -D warnings
