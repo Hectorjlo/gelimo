@@ -1,5 +1,9 @@
 # gelimo
 
+[![CI](https://github.com/Hectorjlo/gelimo/actions/workflows/ci.yml/badge.svg)](https://github.com/Hectorjlo/gelimo/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
+[![Rust](https://img.shields.io/badge/Rust-2024%20Edition-orange.svg)](https://www.rust-lang.org/)
+
 **High-Throughput Generalized Phylogenetic Linear Models in Rust and R**
 
 `gelimo` is an ultra-fast, memory-efficient engine for **Phylogenetic Generalized Least Squares (PGLS)**, designed for comparative genomics and evolutionary trait association. It offers full compatibility with the statistical specifications of R's `caper` package while accelerating whole-genome orthogroup screening by **over $25,000\times$ to $2,000,000\times$** through parallelization, zero-copy matrix factorizations, and pre-computed linear projections.
@@ -39,7 +43,7 @@ Evaluated on a mammalian dataset (**216 species**, **16,916 QC-passed OrthoFinde
 ## Installation
 
 ### 1. Standalone Rust CLI
-Requires a working [Rust toolchain](https://rustup.rs/):
+Requires a working [Rust toolchain](https://rustup.rs/) ($\ge 1.85$):
 ```bash
 git clone https://github.com/Hectorjlo/gelimo.git
 cd gelimo
