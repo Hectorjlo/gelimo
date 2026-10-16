@@ -4,10 +4,8 @@
 //! and memory footprint to O(N) with zero heap allocations during optimization loops.
 
 use faer::Mat;
-use std::collections::HashSet;
 use crate::tree::PhyloTree;
 use crate::math::solver::{invert_small_matrix, GlsResult};
-use crate::math::vcv::compute_vcv;
 
 /// Pre-allocated workspace for O(N) zero-allocation optimization loops.
 #[derive(Debug, Clone)]
@@ -31,7 +29,6 @@ impl LinearSolverWorkspace {
 }
 
 /// Solves PGLS regression system Y = X\beta + \varepsilon in linear O(N) time (Ho & Ané 2014).
-// ponytail: zero-allocation O(N) post-order tree traversal solver (Ho & Ané 2014)
 pub fn solve_gls_linear(
     tree: &PhyloTree,
     x: &Mat<f64>,
@@ -67,19 +64,13 @@ pub fn solve_gls_linear(
 
     // Build post-order traversal ordering of node IDs
     let mut post_order = Vec::with_capacity(num_nodes);
-    let mut visited = HashSet::new();
-
-    fn traverse(tree: &PhyloTree, curr: usize, post_order: &mut Vec<usize>, visited: &mut HashSet<usize>) {
-        visited.insert(curr);
+    fn traverse(tree: &PhyloTree, curr: usize, post_order: &mut Vec<usize>) {
         for &child in &tree.nodes[curr].children {
-            if !visited.contains(&child) {
-                traverse(tree, child, post_order, visited);
-            }
+            traverse(tree, child, post_order);
         }
         post_order.push(curr);
     }
-
-    traverse(tree, tree.root, &mut post_order, &mut visited);
+    traverse(tree, tree.root, &mut post_order);
 
     // Tip node index mapping to tip sequence index (0..n_tips)
     let mut tip_to_seq_idx = vec![0; num_nodes];
@@ -89,8 +80,9 @@ pub fn solve_gls_linear(
 
     let mut xtx: Mat<f64> = Mat::zeros(p, p);
     let mut xty: Mat<f64> = Mat::zeros(p, 1);
+    let mut log_det_v = 0.0;
 
-    // Pass 1: Post-order tree traversal to accumulate X^T V^-1 X and X^T V^-1 Y
+    // Pass 1: Post-order tree traversal to accumulate X^T V^-1 X, X^T V^-1 Y, and log|V|
     for &u in &post_order {
         let node = &tree.nodes[u];
         if node.is_tip {
@@ -108,6 +100,7 @@ pub fn solve_gls_linear(
             for &c in &node.children {
                 let br = tree.nodes[c].branch_length.unwrap_or(0.0).max(1e-15);
                 let v_c_br = ws.node_v[c] + br;
+                log_det_v += v_c_br.ln();
                 let w_c = 1.0 / v_c_br;
                 total_w += w_c;
 
@@ -118,8 +111,11 @@ pub fn solve_gls_linear(
             }
 
             let v_u = 1.0 / total_w.max(1e-15);
+            log_det_v -= v_u.ln();
             let zy_u = weighted_zy * v_u;
-            let zx_u: Vec<f64> = weighted_zx.iter().map(|&w| w * v_u).collect();
+            for (dst, &w) in ws.node_zx[u].iter_mut().zip(&weighted_zx) {
+                *dst = w * v_u;
+            }
 
             // Accumulate independent contrasts to (X^T V^-1 X) and (X^T V^-1 Y)
             for &c in &node.children {
@@ -128,9 +124,9 @@ pub fn solve_gls_linear(
                 let dy = ws.node_zy[c] - zy_u;
 
                 for i in 0..p {
-                    let dxi = ws.node_zx[c][i] - zx_u[i];
+                    let dxi = ws.node_zx[c][i] - ws.node_zx[u][i];
                     for j in 0..p {
-                        let dxj = ws.node_zx[c][j] - zx_u[j];
+                        let dxj = ws.node_zx[c][j] - ws.node_zx[u][j];
                         xtx[(i, j)] += w_c * dxi * dxj;
                     }
                     xty[(i, 0)] += w_c * dxi * dy;
@@ -139,14 +135,15 @@ pub fn solve_gls_linear(
 
             ws.node_v[u] = v_u;
             ws.node_zy[u] = zy_u;
-            ws.node_zx[u] = zx_u;
         }
     }
 
     // Root node mean term
     let root = tree.root;
     let root_br = tree.nodes[root].branch_length.unwrap_or(0.0);
-    let root_w = 1.0 / (ws.node_v[root] + root_br).max(1e-15);
+    let root_v_br = (ws.node_v[root] + root_br).max(1e-15);
+    log_det_v += root_v_br.ln();
+    let root_w = 1.0 / root_v_br;
 
     for i in 0..p {
         for j in 0..p {
@@ -155,46 +152,35 @@ pub fn solve_gls_linear(
         xty[(i, 0)] += root_w * ws.node_zx[root][i] * ws.node_zy[root];
     }
 
-    // Invert X^T V^-1 X
+    // Invert X^T V^-1 X and compute beta = (X^T V^-1 X)^-1 (X^T V^-1 Y)
     let inv_xtx = invert_small_matrix(&xtx)?;
+    let beta = &inv_xtx * &xty;
+    let residuals = y - x * &beta;
 
-    // Compute beta = (X^T V^-1 X)^-1 (X^T V^-1 Y)
-    let mut beta: Mat<f64> = Mat::zeros(p, 1);
-    for i in 0..p {
-        let mut sum = 0.0;
-        for j in 0..p {
-            sum += inv_xtx[(i, j)] * xty[(j, 0)];
-        }
-        beta[(i, 0)] = sum;
-    }
-
-    // Compute raw residuals e = Y - X beta
-    let mut residuals: Mat<f64> = Mat::zeros(n_tips, 1);
-    for i in 0..n_tips {
+    // Pass 2: O(N) residual quadratic form e^T V^-1 e using pre-computed node_zy and node_zx
+    for &u in &post_order {
         let mut pred = 0.0;
         for j in 0..p {
-            pred += x[(i, j)] * beta[(j, 0)];
+            pred += ws.node_zx[u][j] * beta[(j, 0)];
         }
-        residuals[(i, 0)] = y[(i, 0)] - pred;
+        ws.node_ze[u] = ws.node_zy[u] - pred;
     }
 
-    // Compute log_det_v from VCV matrix for exact numerical parity
-    let vcv = compute_vcv(tree);
-    let llt = vcv.as_ref().llt(faer::Side::Lower).map_err(|e| format!("LLT failed: {:?}", e))?;
-    let l_mat = llt.L().to_owned();
-
-    let mut log_det_v = 0.0;
-    for i in 0..n_tips {
-        log_det_v += 2.0 * l_mat[(i, i)].ln();
+    let mut rss_star = root_w * ws.node_ze[root] * ws.node_ze[root];
+    let mut transformed_residuals: Mat<f64> = Mat::zeros(n_tips, 1);
+    for &u in &post_order {
+        let node = &tree.nodes[u];
+        if !node.is_tip {
+            for &c in &node.children {
+                let br = tree.nodes[c].branch_length.unwrap_or(0.0).max(1e-15);
+                let w_c = 1.0 / (ws.node_v[c] + br);
+                let de = ws.node_ze[c] - ws.node_ze[u];
+                rss_star += w_c * de * de;
+            }
+        }
     }
-
-    // Compute transformed residuals e* = L^-1 e
-    let transformed_residuals = crate::math::solver::forward_substitute(&l_mat, &residuals);
-
-    let mut rss_star = 0.0;
-    for i in 0..n_tips {
-        let e = transformed_residuals[(i, 0)];
-        rss_star += e * e;
+    if n_tips > 0 {
+        transformed_residuals[(0, 0)] = rss_star.max(0.0).sqrt();
     }
 
     let sigma2_ml = rss_star / (n_tips as f64);
@@ -207,14 +193,8 @@ pub fn solve_gls_linear(
         - 0.5 * log_det_v
         - 0.5 * n_f64;
 
-    let mut vcov_beta: Mat<f64> = Mat::zeros(p, p);
-    let mut se = vec![0.0; p];
-    for i in 0..p {
-        for j in 0..p {
-            vcov_beta[(i, j)] = inv_xtx[(i, j)] * sigma2_ml;
-        }
-        se[i] = vcov_beta[(i, i)].max(0.0).sqrt();
-    }
+    let vcov_beta = &inv_xtx * faer::Scale(sigma2_ml);
+    let se: Vec<f64> = (0..p).map(|i| vcov_beta[(i, i)].max(0.0).sqrt()).collect();
 
     Ok(GlsResult {
         beta,

@@ -1,5 +1,3 @@
-mod common;
-
 use gelimo::data::ComparativeData;
 use gelimo::math::{apply_pagel_lambda, compute_vcv, solve_gls};
 use gelimo::stats::{compute_aic, compute_r_squared};

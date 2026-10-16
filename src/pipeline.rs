@@ -35,7 +35,6 @@ pub struct PglsSummary {
 }
 
 /// Executes the full PGLS pipeline from file ingestion to model fitting and statistical summary.
-// ponytail: high-level pipeline linking data ingestion, tree scaling, solver, ML opt and metrics
 pub fn run_pgls_pipeline(config: &PglsConfig) -> Result<PglsSummary, String> {
     let options = ComparativeDataOptions {
         prune: config.prune,

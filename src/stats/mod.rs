@@ -2,4 +2,4 @@
 
 pub mod metrics;
 
-pub use metrics::{compute_aic, compute_log_likelihood, compute_r_squared};
+pub use metrics::{compute_aic, compute_r_squared};

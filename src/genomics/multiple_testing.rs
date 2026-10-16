@@ -23,7 +23,6 @@ pub struct AnnotatedOrthoResult {
 }
 
 /// Applies False Discovery Rate (Benjamini-Hochberg) and Bonferroni adjustments and sorts results by significance.
-// ponytail: O(M log M) in-place index sort and backward cumulative minimum pass
 pub fn adjust_p_values(raw_results: Vec<OrthoPglsResult>) -> Vec<AnnotatedOrthoResult> {
     let m = raw_results.len();
     if m == 0 {
@@ -83,7 +82,6 @@ pub fn adjust_p_values(raw_results: Vec<OrthoPglsResult>) -> Vec<AnnotatedOrthoR
 }
 
 /// Exports annotated orthogroup PGLS results to a TSV file using buffered I/O.
-// ponytail: streaming buffered TSV writer
 pub fn export_ortho_results_tsv(
     results: &[AnnotatedOrthoResult],
     output_path: &str,

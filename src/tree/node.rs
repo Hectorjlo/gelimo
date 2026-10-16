@@ -43,122 +43,90 @@ impl PhyloTree {
             .collect()
     }
 
-    /// Applies Pagel's lambda transformation to this tree by scaling internal branch lengths.
-    // ponytail: tree branch length lambda transformation
-    pub fn apply_lambda(&self, lambda: f64) -> PhyloTree {
-        crate::math::pagel::apply_pagel_lambda_tree(self, lambda)
-    }
-
     /// Prunes the tree, keeping only tips whose normalized name is in `species_to_keep`.
     /// Single-child internal nodes resulting from pruning are collapsed.
-    //  Clean recursive node pruning and 1-child node collapsing
     pub fn prune(&self, species_to_keep: &HashSet<String>) -> Result<PhyloTree, String> {
-        let mut keep_node_ids = HashSet::new();
-        for &tip_id in &self.tips {
-            let tip_name = self.nodes[tip_id].name.as_deref().unwrap_or("");
-            let norm = normalize_species_name(tip_name);
-            if species_to_keep.contains(&norm) {
-                keep_node_ids.insert(tip_id);
-            }
-        }
+        let keep_node_ids: HashSet<usize> = self
+            .tips
+            .iter()
+            .copied()
+            .filter(|&tip_id| {
+                let tip_name = self.nodes[tip_id].name.as_deref().unwrap_or("");
+                species_to_keep.contains(&normalize_species_name(tip_name))
+            })
+            .collect();
 
         if keep_node_ids.is_empty() {
             return Err("Pruning resulted in empty tree (0 tips remaining)".to_string());
         }
 
-        struct SimpleNode {
-            name: Option<String>,
-            branch_length: Option<f64>,
-            children: Vec<SimpleNode>,
-        }
-
-        fn build_simple(tree: &PhyloTree, curr_idx: usize, keep_node_ids: &HashSet<usize>) -> Option<SimpleNode> {
+        fn prune_rec(
+            tree: &PhyloTree,
+            curr_idx: usize,
+            keep_node_ids: &HashSet<usize>,
+            nodes: &mut Vec<Node>,
+            tips: &mut Vec<usize>,
+        ) -> Option<usize> {
             let node = &tree.nodes[curr_idx];
             if node.is_tip {
-                if keep_node_ids.contains(&curr_idx) {
-                    Some(SimpleNode {
-                        name: node.name.clone(),
-                        branch_length: node.branch_length,
-                        children: Vec::new(),
-                    })
-                } else {
-                    None
+                if !keep_node_ids.contains(&curr_idx) {
+                    return None;
                 }
-            } else {
-                let mut kept_children = Vec::new();
-                for &child_idx in &node.children {
-                    if let Some(child_simple) = build_simple(tree, child_idx, keep_node_ids) {
-                        kept_children.push(child_simple);
-                    }
-                }
+                let id = nodes.len();
+                nodes.push(Node {
+                    id,
+                    name: node.name.clone(),
+                    branch_length: node.branch_length,
+                    children: Vec::new(),
+                    parent: None,
+                    is_tip: true,
+                });
+                tips.push(id);
+                return Some(id);
+            }
 
-                if kept_children.is_empty() {
-                    None
-                } else if kept_children.len() == 1 {
-                    let mut child = kept_children.pop().unwrap();
-                    let my_len = node.branch_length.unwrap_or(0.0);
-                    let child_len = child.branch_length.unwrap_or(0.0);
-                    child.branch_length = Some(my_len + child_len);
-                    Some(child)
-                } else {
-                    Some(SimpleNode {
+            let kept_children: Vec<usize> = node
+                .children
+                .iter()
+                .filter_map(|&c| prune_rec(tree, c, keep_node_ids, nodes, tips))
+                .collect();
+
+            match kept_children.len() {
+                0 => None,
+                1 => {
+                    let child_id = kept_children[0];
+                    let merged_len = node.branch_length.unwrap_or(0.0)
+                        + nodes[child_id].branch_length.unwrap_or(0.0);
+                    nodes[child_id].branch_length = Some(merged_len);
+                    Some(child_id)
+                }
+                _ => {
+                    let id = nodes.len();
+                    for &c_id in &kept_children {
+                        nodes[c_id].parent = Some(id);
+                    }
+                    nodes.push(Node {
+                        id,
                         name: node.name.clone(),
                         branch_length: node.branch_length,
                         children: kept_children,
-                    })
+                        parent: None,
+                        is_tip: false,
+                    });
+                    Some(id)
                 }
             }
         }
 
-        let root_simple = build_simple(self, self.root, &keep_node_ids)
-            .ok_or_else(|| "Failed to prune tree root".to_string())?;
-
         let mut nodes = Vec::new();
         let mut tips = Vec::new();
+        let root = prune_rec(self, self.root, &keep_node_ids, &mut nodes, &mut tips)
+            .ok_or_else(|| "Failed to prune tree root".to_string())?;
 
-        fn flatten(
-            snode: SimpleNode,
-            parent: Option<usize>,
-            nodes: &mut Vec<Node>,
-            tips: &mut Vec<usize>,
-        ) -> usize {
-            let id = nodes.len();
-            let is_tip = snode.children.is_empty();
-
-            nodes.push(Node {
-                id,
-                name: snode.name,
-                branch_length: snode.branch_length,
-                children: Vec::new(),
-                parent,
-                is_tip,
-            });
-
-            if is_tip {
-                tips.push(id);
-            } else {
-                let child_ids: Vec<usize> = snode
-                    .children
-                    .into_iter()
-                    .map(|child| flatten(child, Some(id), nodes, tips))
-                    .collect();
-                nodes[id].children = child_ids;
-            }
-
-            id
-        }
-
-        let root_idx = flatten(root_simple, None, &mut nodes, &mut tips);
-
-        Ok(PhyloTree {
-            nodes,
-            root: root_idx,
-            tips,
-        })
+        Ok(PhyloTree { nodes, root, tips })
     }
 
     /// Serializes the phylogenetic tree back into standard Newick format string.
-    // ponytail: recursive zero-dependency Newick tree serialization
     pub fn to_newick(&self) -> String {
         let mut buf = String::new();
         self.format_node_newick(self.root, &mut buf);

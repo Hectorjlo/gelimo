@@ -35,7 +35,7 @@ For high-dimensional traits or large trees ($N > 1000$), `gelimo` incorporates t
 
 ---
 
-## 5. Architectural Optimization Principles (Ponytail Strategy)
+## 5. Architectural Optimization Principles
 
 ### 5.1. Parallel Tree & Parameter Optimization (SIMD + Rayon Zero-Copy)
 In empirical phylogenetic studies, analyses evaluate thousands of posterior trees (to account for phylogenetic uncertainty) or fit multiple evolutionary models ($\lambda, \kappa, \delta, \text{OU}$) simultaneously.

@@ -5,8 +5,8 @@
 #' @useDynLib gelimo, .registration = TRUE
 NULL
 
-r_pgls_orthogroups <- function(tree, data, orthogroups, response, covariates = NULL, output_tsv = NULL, log_count = FALSE, gfs_as_response = FALSE, lambda = 1.0, opt_lambda = FALSE, min_species = 5L, min_variance = 1e-6, prune = TRUE) {
-  .Call(wrap__r_pgls_orthogroups, tree, data, orthogroups, response, covariates, output_tsv, log_count, gfs_as_response, lambda, opt_lambda, min_species, min_variance, prune)
+r_pgls_orthogroups <- function(tree, data, orthogroups, response, covariates = NULL, output_tsv = NULL, log_count = FALSE, gfs_as_response = FALSE, lambda = 1.0, opt_lambda = FALSE, min_species = 5L, min_prevalence = NULL, min_variance = 1e-6, min_count_spread = NULL, min_count_range = NULL, top_ogs = NULL, save_tree = NULL, prune = TRUE) {
+  .Call(wrap__r_pgls_orthogroups, tree, data, orthogroups, response, covariates, output_tsv, log_count, gfs_as_response, lambda, opt_lambda, min_species, min_prevalence, min_variance, min_count_spread, min_count_range, top_ogs, save_tree, prune)
 }
 
 r_pgls_fit <- function(tree, data, response, predictors = NULL, lambda = 1.0, opt_lambda = FALSE, prune = TRUE, solver = "dense") {

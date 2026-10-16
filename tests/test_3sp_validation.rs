@@ -1,5 +1,3 @@
-mod common;
-
 #[test]
 fn test_3sp_files_exist() {
     let tree_path = std::path::Path::new("data/benchmark_3sp.tree");

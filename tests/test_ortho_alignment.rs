@@ -92,12 +92,13 @@ fn test_tripartite_alignment_mammals_real_data() {
 
     println!("Multiple testing adjustment completed in: {:?}", adjust_elapsed);
 
-    let output_tsv = "agy/test/mammals_longevity_orthogroups_pgls.tsv";
-    std::fs::create_dir_all("agy/test").unwrap();
+    let output_path = std::env::temp_dir().join("mammals_longevity_orthogroups_pgls.tsv");
+    let output_tsv = output_path.to_str().unwrap();
     export_ortho_results_tsv(&annotated_results, output_tsv).expect("TSV export failed");
 
     println!("Exported results to: {}", output_tsv);
-    assert!(std::path::Path::new(output_tsv).exists());
+    assert!(output_path.exists());
+    let _ = std::fs::remove_file(&output_path);
 
     println!("--- Top 5 Longevity Hits (with FDR q-values) ---");
     for (rank, hit) in annotated_results.iter().take(5).enumerate() {

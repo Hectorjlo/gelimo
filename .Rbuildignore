@@ -1,0 +1,12 @@
+^target$
+^benches$
+^tests$
+^docs$
+^data$
+^user$
+^agy$
+^\.git$
+^\.gitignore$
+^Cargo\.lock$
+^CITATION\.cff$
+^README\.md$

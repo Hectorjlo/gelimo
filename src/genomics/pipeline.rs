@@ -62,7 +62,6 @@ pub struct OrthoPipelineSummary {
 }
 
 /// Executes the full end-to-end genomic PGLS pipeline across all orthogroups.
-// ponytail: clean orchestration of alignment, QC, ML lambda, parallel PGLS, FDR and TSV export
 pub fn run_ortho_pipeline(config: &OrthoPipelineConfig) -> Result<OrthoPipelineSummary, String> {
     // 1. Tripartite alignment (Tree + Phenotype + OrthoFinder)
     let pheno_options = ComparativeDataOptions {
@@ -78,15 +77,15 @@ pub fn run_ortho_pipeline(config: &OrthoPipelineConfig) -> Result<OrthoPipelineS
     )?;
 
     // 1b. Save pruned tree if requested
-    if let Some(ref save_path) = config.save_tree_path {
-        if !save_path.trim().is_empty() {
-            if let Some(parent) = std::path::Path::new(save_path).parent() {
-                let _ = std::fs::create_dir_all(parent);
-            }
-            let newick_str = tri_data.tree.to_newick();
-            std::fs::write(save_path, newick_str)
-                .map_err(|e| format!("Failed to write pruned tree to '{}': {}", save_path, e))?;
+    if let Some(ref save_path) = config.save_tree_path
+        && !save_path.trim().is_empty()
+    {
+        if let Some(parent) = std::path::Path::new(save_path).parent() {
+            let _ = std::fs::create_dir_all(parent);
         }
+        let newick_str = tri_data.tree.to_newick();
+        std::fs::write(save_path, newick_str)
+            .map_err(|e| format!("Failed to write pruned tree to '{}': {}", save_path, e))?;
     }
 
     // 2. QC Filtering
@@ -99,7 +98,6 @@ pub fn run_ortho_pipeline(config: &OrthoPipelineConfig) -> Result<OrthoPipelineS
         top_ogs: config.top_ogs,
         binary_mode: config.binary_mode,
         log_count_mode: config.log_count_mode,
-        species_total_genes: None,
     };
     let filtered_ortho = filter_orthogroups(&tri_data.orthogroups, &filter_options);
 

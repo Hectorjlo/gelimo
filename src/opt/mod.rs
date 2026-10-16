@@ -2,6 +2,4 @@
 
 pub mod lambda;
 
-pub use lambda::{
-    grid_search_lambda_parallel, optimize_pagel_lambda, LambdaOptResult,
-};
+pub use lambda::{optimize_pagel_lambda, LambdaOptResult};

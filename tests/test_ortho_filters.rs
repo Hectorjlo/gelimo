@@ -89,7 +89,8 @@ fn test_end_to_end_pipeline_with_save_tree_and_eval_ranges() {
     let tree_path = "user/test/mammals_ng/tree/SpeciesTree_rooted.txt";
     let pheno_path = "user/test/AnAge/anage_data_log_mammals_filtered.tsv";
     let ortho_path = "user/test/mammals_ng/Orthogroups/Orthogroups.GeneCount.tsv";
-    let temp_tree_out = "user/test/output_pruned_tree.nwk";
+    let temp_tree_path = std::env::temp_dir().join("gelimo_output_pruned_tree.nwk");
+    let temp_tree_out = temp_tree_path.to_str().unwrap();
 
     if !std::path::Path::new(tree_path).exists()
         || !std::path::Path::new(pheno_path).exists()
@@ -130,8 +131,8 @@ fn test_end_to_end_pipeline_with_save_tree_and_eval_ranges() {
     assert_eq!(summary.all_results.len(), 50);
 
     // Check saved tree
-    assert!(std::path::Path::new(temp_tree_out).exists());
-    let saved_content = std::fs::read_to_string(temp_tree_out).expect("Read saved tree");
+    assert!(temp_tree_path.exists());
+    let saved_content = std::fs::read_to_string(&temp_tree_path).expect("Read saved tree");
     let parsed_tree = parse_newick(&saved_content).expect("Parse saved tree");
     assert_eq!(parsed_tree.tips.len(), summary.tri_report.matched_species_count);
 
@@ -141,5 +142,5 @@ fn test_end_to_end_pipeline_with_save_tree_and_eval_ranges() {
     assert_eq!(summary.eval_ranges_summary[1].threshold_spread, 2.0);
 
     // Clean up temporary tree file
-    let _ = std::fs::remove_file(temp_tree_out);
+    let _ = std::fs::remove_file(&temp_tree_path);
 }

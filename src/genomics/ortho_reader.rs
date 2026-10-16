@@ -32,7 +32,6 @@ impl OrthoGeneCountTable {
     }
 
     /// Returns a slice of gene counts across all species for a given orthogroup index.
-    // ponytail: zero-copy row slice access
     pub fn get_og_counts(&self, og_idx: usize) -> &[f64] {
         let k = self.species_names.len();
         let start = og_idx * k;
@@ -41,7 +40,6 @@ impl OrthoGeneCountTable {
 }
 
 /// Fast streaming parser for OrthoFinder `Orthogroups.GeneCount.tsv`.
-// ponytail: fast zero-allocation line reader for OrthoFinder TSVs
 pub fn read_orthogroup_gene_counts(path: &str) -> Result<OrthoGeneCountTable, String> {
     let file = File::open(path).map_err(
         |e| format!("Failed to open OrthoFinder file '{}': {}", path, e)
@@ -124,13 +122,12 @@ pub struct TripartiteReport {
 pub struct TripartiteComparativeData {
     pub tree: PhyloTree,
     pub species_names: Vec<String>,
-    pub pheno_data: polars::prelude::DataFrame,
+    pub pheno_data: crate::data::comparative::TraitTable,
     pub orthogroups: OrthoGeneCountTable,
     pub report: TripartiteReport,
 }
 
 /// Aligns Tree, Phenotype table (e.g. AnAge), and OrthoFinder GeneCount table into a unified structure.
-// ponytail: single-pass tripartite intersection and tree pruning
 pub fn align_tripartite(
     tree_path: &str,
     pheno_path: &str,
@@ -249,11 +246,8 @@ pub fn align_tripartite(
         counts: aligned_counts,
     };
 
-    // 6. Filter Phenotype DataFrame rows aligned to final tree tips order
-    use polars::prelude::*;
-    let row_indices: Vec<u32> = reordered_tree_indices.iter().map(|&idx| idx as u32).collect();
-    let idx_ca = UInt32Chunked::from_slice("idx".into(), &row_indices);
-    let aligned_pheno = comp_data.data.take(&idx_ca).map_err(|e| format!("Polars take error: {}", e))?;
+    // 6. Filter Phenotype table rows aligned to final tree tips order
+    let aligned_pheno = comp_data.data.reorder(&reordered_tree_indices);
 
     let report = TripartiteReport {
         tree_tips_count: comp_data.tree.tips.len(),
@@ -287,16 +281,17 @@ mod tests {
     #[test]
     fn test_read_orthogroup_gene_counts_mock() {
         let tsv_content = "Orthogroup\tSp_A\tSp_B\tTotal\nOG0001\t2\t5\t7\nOG0002\t0\t3\t3\n";
-        let temp_path = "agy/test/mock_ortho.tsv";
-        std::fs::write(temp_path, tsv_content).unwrap();
+        let temp_path = std::env::temp_dir().join("gelimo_mock_ortho.tsv");
+        let temp_str = temp_path.to_str().unwrap();
+        std::fs::write(&temp_path, tsv_content).unwrap();
 
-        let table = read_orthogroup_gene_counts(temp_path).unwrap();
+        let table = read_orthogroup_gene_counts(temp_str).unwrap();
         assert_eq!(table.num_orthogroups(), 2);
         assert_eq!(table.num_species(), 2);
         assert_eq!(table.species_names, vec!["Sp_A", "Sp_B"]);
         assert_eq!(table.get_og_counts(0), &[2.0, 5.0]);
         assert_eq!(table.get_og_counts(1), &[0.0, 3.0]);
 
-        let _ = std::fs::remove_file(temp_path);
+        let _ = std::fs::remove_file(&temp_path);
     }
 }

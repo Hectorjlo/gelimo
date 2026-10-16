@@ -5,7 +5,6 @@ use std::collections::HashSet;
 use crate::tree::PhyloTree;
 
 /// Computes root-to-node path distance for all nodes in the tree.
-// ponytail: single bottom-up path tracing for MRCA distance computation
 fn compute_root_distances(tree: &PhyloTree) -> Vec<f64> {
     let mut dists = vec![0.0; tree.nodes.len()];
     for (i, d) in dists.iter_mut().enumerate() {

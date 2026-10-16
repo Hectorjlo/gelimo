@@ -21,8 +21,6 @@ pub struct OrthoFilterOptions {
     pub binary_mode: bool,
     /// Apply log10(count + 1) transformation to gene counts.
     pub log_count_mode: bool,
-    /// Optional total gene counts per species for genome-size normalization (per 10k genes).
-    pub species_total_genes: Option<Vec<f64>>,
 }
 
 impl Default for OrthoFilterOptions {
@@ -36,7 +34,6 @@ impl Default for OrthoFilterOptions {
             top_ogs: None,
             binary_mode: false,
             log_count_mode: false,
-            species_total_genes: None,
         }
     }
 }
@@ -58,7 +55,6 @@ pub struct OrthoFilterReport {
 #[derive(Debug, Clone)]
 pub struct FilteredOrthoData {
     pub orthogroup_ids: Vec<String>,
-    pub original_indices: Vec<usize>,
     pub species_names: Vec<String>,
     /// Filtered flat matrix of shape (M_retained x N_species).
     pub counts: Vec<f64>,
@@ -77,7 +73,6 @@ impl FilteredOrthoData {
     }
 
     /// Returns a slice of gene counts across species for a retained orthogroup index.
-    // ponytail: zero-copy row slice access
     pub fn get_og_counts(&self, og_idx: usize) -> &[f64] {
         let n = self.species_names.len();
         let start = og_idx * n;
@@ -86,7 +81,6 @@ impl FilteredOrthoData {
 }
 
 /// Applies QC filtering and optional transformations to an `OrthoGeneCountTable`.
-// ponytail: single-pass streaming QC filter with zero allocation per discarded OG
 pub fn filter_orthogroups(
     raw_table: &OrthoGeneCountTable,
     options: &OrthoFilterOptions,
@@ -106,7 +100,6 @@ pub fn filter_orthogroups(
     };
 
     let mut candidate_ids = Vec::with_capacity(num_ogs / 2);
-    let mut candidate_indices = Vec::with_capacity(num_ogs / 2);
     let mut candidate_counts = Vec::with_capacity((num_ogs / 2) * num_species);
     let mut candidate_variances = if options.top_ogs.is_some() {
         Vec::with_capacity(num_ogs / 2)
@@ -136,9 +129,6 @@ pub fn filter_orthogroups(
                 if raw_val > 0.0 { 1.0 } else { 0.0 }
             } else if options.log_count_mode {
                 (raw_val + 1.0).log10()
-            } else if let Some(ref totals) = options.species_total_genes {
-                let total = totals.get(i).copied().unwrap_or(1.0).max(1.0);
-                (raw_val / total) * 10_000.0
             } else {
                 raw_val
             };
@@ -156,7 +146,7 @@ pub fn filter_orthogroups(
             sum += val;
         }
 
-        // Check 1: Invariant check (all 0s or all identical)
+        // Check 1: Invariant check (all 0s)
         if species_with_gene == 0 {
             discarded_invariant += 1;
             continue;
@@ -169,11 +159,11 @@ pub fn filter_orthogroups(
         }
 
         // Check 3: Minimum absolute count range (max - min)
-        if let Some(min_range) = options.min_count_range {
-            if (max_val - min_val) < min_range {
-                discarded_low_range += 1;
-                continue;
-            }
+        if let Some(min_range) = options.min_count_range
+            && (max_val - min_val) < min_range
+        {
+            discarded_low_range += 1;
+            continue;
         }
 
         // Check 4: Minimum interdecile count spread (P95 - P05)
@@ -205,7 +195,6 @@ pub fn filter_orthogroups(
 
         // Retain candidate
         candidate_ids.push(raw_table.orthogroup_ids[m].clone());
-        candidate_indices.push(m);
         candidate_counts.extend_from_slice(&temp_buf);
         if options.top_ogs.is_some() {
             candidate_variances.push(variance);
@@ -214,11 +203,10 @@ pub fn filter_orthogroups(
 
     // Step 6: Optional top_ogs selection
     let mut discarded_top_ogs = 0;
-    let (orthogroup_ids, original_indices, counts) = if let Some(top_n) = options.top_ogs {
+    let (orthogroup_ids, counts) = if let Some(top_n) = options.top_ogs {
         let n_cands = candidate_ids.len();
         if n_cands > top_n {
             discarded_top_ogs = n_cands - top_n;
-            // Rank candidate indices by variance descending
             let mut order: Vec<usize> = (0..n_cands).collect();
             order.sort_by(|&a, &b| {
                 candidate_variances[b]
@@ -226,32 +214,28 @@ pub fn filter_orthogroups(
                     .unwrap_or(std::cmp::Ordering::Equal)
             });
             order.truncate(top_n);
-            // Restore original file order among top OGs for reproducibility
             order.sort_unstable();
 
             let mut final_ids = Vec::with_capacity(top_n);
-            let mut final_indices = Vec::with_capacity(top_n);
             let mut final_counts = Vec::with_capacity(top_n * num_species);
 
             for idx in order {
                 final_ids.push(candidate_ids[idx].clone());
-                final_indices.push(candidate_indices[idx]);
                 let start = idx * num_species;
                 final_counts.extend_from_slice(&candidate_counts[start..start + num_species]);
             }
-            (final_ids, final_indices, final_counts)
+            (final_ids, final_counts)
         } else {
-            (candidate_ids, candidate_indices, candidate_counts)
+            (candidate_ids, candidate_counts)
         }
     } else {
-        (candidate_ids, candidate_indices, candidate_counts)
+        (candidate_ids, candidate_counts)
     };
 
     let retained = orthogroup_ids.len();
 
     FilteredOrthoData {
         orthogroup_ids,
-        original_indices,
         species_names: raw_table.species_names.clone(),
         counts,
         filter_report: OrthoFilterReport {
@@ -299,7 +283,6 @@ mod tests {
 
         assert_eq!(filtered.num_orthogroups(), 1);
         assert_eq!(filtered.orthogroup_ids[0], "OG_valid_cnv");
-        assert_eq!(filtered.original_indices[0], 3);
         assert_eq!(filtered.filter_report.initial_orthogroups, 4);
         assert_eq!(filtered.filter_report.retained_orthogroups, 1);
         assert_eq!(filtered.filter_report.discarded_invariant, 1);

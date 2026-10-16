@@ -1,9 +1,8 @@
-//! Maximum Likelihood estimation of Pagel's lambda using bounded 1D optimization and Rayon parallelism.
+//! Maximum Likelihood estimation of Pagel's lambda using bounded 1D optimization.
 
 use crate::math::pagel::apply_pagel_lambda;
 use crate::math::solver::{solve_gls, GlsResult};
 use faer::Mat;
-use rayon::prelude::*;
 
 /// Output summary for Pagel's $\lambda$ Maximum Likelihood optimization.
 #[derive(Debug, Clone)]
@@ -24,38 +23,7 @@ pub struct LambdaOptResult {
     pub gls_result: GlsResult,
 }
 
-/// Evaluates Log-Likelihood across a grid of $\lambda$ values in parallel using Rayon (zero-copy).
-// ponytail: zero-copy data-parallel grid search using rayon
-pub fn grid_search_lambda_parallel(
-    vcv: &Mat<f64>,
-    x: &Mat<f64>,
-    y: &Mat<f64>,
-    grid_points: usize,
-    lower: f64,
-    upper: f64,
-) -> Vec<(f64, f64)> {
-    let steps = grid_points.max(2);
-    let step_size = (upper - lower) / ((steps - 1) as f64);
-
-    let lambdas: Vec<f64> = (0..steps)
-        .map(|i| lower + (i as f64) * step_size)
-        .collect();
-
-    lambdas
-        .into_par_iter()
-        .map(|lam| {
-            let v_lam = apply_pagel_lambda(vcv, lam);
-            let log_lik = match solve_gls(&v_lam, x, y) {
-                Ok(res) => res.log_likelihood,
-                Err(_) => f64::NEG_INFINITY,
-            };
-            (lam, log_lik)
-        })
-        .collect()
-}
-
 /// Optimizes Pagel's $\lambda$ by Maximum Likelihood within `[lower, upper]` bounds using Golden-Section search.
-// ponytail: zero-allocation 1D bounded optimization for Pagel lambda
 pub fn optimize_pagel_lambda(
     vcv: &Mat<f64>,
     x: &Mat<f64>,
@@ -151,7 +119,6 @@ mod tests {
     use super::*;
     use crate::data::ComparativeData;
     use crate::math::compute_vcv;
-    use approx::assert_relative_eq;
 
     #[test]
     fn test_optimize_pagel_lambda_3sp() {
@@ -165,22 +132,5 @@ mod tests {
         assert!(opt_res.optimal_lambda >= 0.0 && opt_res.optimal_lambda <= 1.0);
         assert!(opt_res.log_likelihood_ml >= opt_res.log_likelihood_lambda0 - 1e-4);
         assert!(opt_res.log_likelihood_ml >= opt_res.log_likelihood_lambda1 - 1e-4);
-    }
-
-    #[test]
-    fn test_grid_search_lambda_parallel_3sp() {
-        let comp_data = ComparativeData::from_files("data/benchmark_3sp.tree", "data/benchmark_3sp.tsv").unwrap();
-        let y = comp_data.to_response_vector("Maximum longevity (yrs)").unwrap();
-        let x = comp_data.to_design_matrix(&["Adult weight (g)"]).unwrap();
-        let vcv = compute_vcv(&comp_data.tree);
-
-        let grid = grid_search_lambda_parallel(&vcv, &x, &y, 11, 0.0, 1.0);
-
-        assert_eq!(grid.len(), 11);
-        assert_relative_eq!(grid[0].0, 0.0, epsilon = 1e-12);
-        assert_relative_eq!(grid[10].0, 1.0, epsilon = 1e-12);
-        for (_, loglik) in &grid {
-            assert!(loglik.is_finite());
-        }
     }
 }

@@ -3,21 +3,35 @@ use gelimo::data::{ComparativeData, ComparativeDataOptions};
 use gelimo::math::{
     compute_vcv, solve_gls, solve_gls_linear, LinearSolverWorkspace,
 };
-use gelimo::opt::{grid_search_lambda_parallel, optimize_pagel_lambda};
+use gelimo::opt::optimize_pagel_lambda;
 
-fn bench_gls_solvers(c: &mut Criterion) {
+fn load_bench_data() -> (ComparativeData, &'static str) {
     let options = ComparativeDataOptions {
         prune: true,
         fuzzy_taxonomy: true,
     };
-    let comp_data = ComparativeData::from_files_with_options(
-        "user/test/mammals_ng/tree/SpeciesTree_rooted.txt",
-        "user/test/AnAge/anage_data_log_mammals_filtered.tsv",
-        &options,
-    )
-    .unwrap();
+    let mammals_tree = "user/test/mammals_ng/tree/SpeciesTree_rooted.txt";
+    let mammals_tsv = "user/test/AnAge/anage_data_log_mammals_filtered.tsv";
+
+    if std::path::Path::new(mammals_tree).exists() && std::path::Path::new(mammals_tsv).exists() {
+        let comp = ComparativeData::from_files_with_options(mammals_tree, mammals_tsv, &options)
+            .expect("Failed to load mammals benchmark dataset");
+        (comp, "Log Adult weight (g)")
+    } else {
+        let comp = ComparativeData::from_files_with_options(
+            "data/benchmark_3sp.tree",
+            "data/benchmark_3sp.tsv",
+            &options,
+        )
+        .expect("Failed to load 3sp benchmark dataset");
+        (comp, "Adult weight (g)")
+    }
+}
+
+fn bench_gls_solvers(c: &mut Criterion) {
+    let (comp_data, pred_col) = load_bench_data();
     let y = comp_data.to_response_vector("Maximum longevity (yrs)").unwrap();
-    let x = comp_data.to_design_matrix(&["Log Adult weight (g)"]).unwrap();
+    let x = comp_data.to_design_matrix(&[pred_col]).unwrap();
     let vcv = compute_vcv(&comp_data.tree);
     let mut ws = LinearSolverWorkspace::new(comp_data.tree.nodes.len(), 2);
 
@@ -45,18 +59,9 @@ fn bench_gls_solvers(c: &mut Criterion) {
 }
 
 fn bench_optimization(c: &mut Criterion) {
-    let options = ComparativeDataOptions {
-        prune: true,
-        fuzzy_taxonomy: true,
-    };
-    let comp_data = ComparativeData::from_files_with_options(
-        "user/test/mammals_ng/tree/SpeciesTree_rooted.txt",
-        "user/test/AnAge/anage_data_log_mammals_filtered.tsv",
-        &options,
-    )
-    .unwrap();
+    let (comp_data, pred_col) = load_bench_data();
     let y = comp_data.to_response_vector("Maximum longevity (yrs)").unwrap();
-    let x = comp_data.to_design_matrix(&["Log Adult weight (g)"]).unwrap();
+    let x = comp_data.to_design_matrix(&[pred_col]).unwrap();
     let vcv = compute_vcv(&comp_data.tree);
 
     let mut group = c.benchmark_group("optimization");
@@ -72,19 +77,6 @@ fn bench_optimization(c: &mut Criterion) {
                 1e-6,
             )
             .unwrap();
-        })
-    });
-
-    group.bench_function("rayon_parallel_grid_search_100_pts", |b| {
-        b.iter(|| {
-            grid_search_lambda_parallel(
-                black_box(&vcv),
-                black_box(&x),
-                black_box(&y),
-                100,
-                0.0,
-                1.0,
-            );
         })
     });
 

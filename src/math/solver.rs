@@ -36,7 +36,6 @@ pub struct GlsResult {
 }
 
 /// Solves forward substitution $L X^* = X$ for a lower-triangular matrix $L$.
-// ponytail: stdlib forward substitution for O(N^2 * p) triangular solve
 pub fn forward_substitute(l: &Mat<f64>, x: &Mat<f64>) -> Mat<f64> {
     let n = x.nrows();
     let p = x.ncols();
@@ -61,7 +60,6 @@ pub fn forward_substitute(l: &Mat<f64>, x: &Mat<f64>) -> Mat<f64> {
 }
 
 /// Computes the inverse of a small $p \times p$ matrix.
-// ponytail: explicit 2x2 and faer general inverse solver
 pub fn invert_small_matrix(a: &Mat<f64>) -> Result<Mat<f64>, String> {
     let p = a.nrows();
     if p != a.ncols() {
@@ -92,13 +90,11 @@ pub fn invert_small_matrix(a: &Mat<f64>) -> Result<Mat<f64>, String> {
         return Ok(inv);
     }
 
-    // General inverse via Cholesky / PartialPivLu for p >= 3
-    let lu = a.partial_piv_lu();
-    Ok(lu.inverse())
+    // General inverse via PartialPivLu for p >= 3
+    Ok(a.partial_piv_lu().inverse())
 }
 
 /// Solves GLS regression system $Y = X\beta + \varepsilon$ with covariance matrix $V$.
-// ponytail: complete Cholesky-based GLS solver with exact ML log-likelihood and variance metrics
 pub fn solve_gls(
     vcv: &Mat<f64>,
     x: &Mat<f64>,
@@ -139,80 +135,38 @@ pub fn solve_gls(
     let x_star = forward_substitute(&l_mat, x);
     let y_star = forward_substitute(&l_mat, y);
 
-    // 4. Compute X*^T X* and X*^T Y*
-    let mut xtx_star = Mat::zeros(p, p);
-    for i in 0..p {
-        for j in 0..p {
-            let mut sum = 0.0;
-            for k in 0..n {
-                sum += x_star[(k, i)] * x_star[(k, j)];
-            }
-            xtx_star[(i, j)] = sum;
-        }
-    }
-
-    let mut xty_star = Mat::zeros(p, 1);
-    for i in 0..p {
-        let mut sum = 0.0;
-        for k in 0..n {
-            sum += x_star[(k, i)] * y_star[(k, 0)];
-        }
-        xty_star[(i, 0)] = sum;
-    }
-
-    // 5. Invert (X*^T X*)
+    // 4. Compute X*^T X*, invert, and solve beta_hat = (X*^T X*)^-1 (X*^T Y*)
+    let xtx_star = x_star.transpose() * &x_star;
+    let xty_star = x_star.transpose() * &y_star;
     let inv_xtx = invert_small_matrix(&xtx_star)?;
+    let beta = &inv_xtx * &xty_star;
 
-    // 6. Compute beta_hat = (X*^T X*)^-1 (X*^T Y*)
-    let mut beta = Mat::zeros(p, 1);
-    for i in 0..p {
-        let mut sum = 0.0;
-        for j in 0..p {
-            sum += inv_xtx[(i, j)] * xty_star[(j, 0)];
-        }
-        beta[(i, 0)] = sum;
-    }
-
-    // 7. Compute residuals
-    let mut residuals = Mat::zeros(n, 1);
-    for i in 0..n {
-        let mut pred = 0.0;
-        for j in 0..p {
-            pred += x[(i, j)] * beta[(j, 0)];
-        }
-        residuals[(i, 0)] = y[(i, 0)] - pred;
-    }
-
+    // 5. Compute residuals and transformed residuals
+    let residuals = y - x * &beta;
     let transformed_residuals = forward_substitute(&l_mat, &residuals);
 
-    // 8. Residual sum of squares RSS* = sum((e*)^2)
-    let mut rss_star = 0.0;
-    for i in 0..n {
-        let e = transformed_residuals[(i, 0)];
-        rss_star += e * e;
-    }
+    // 6. Residual sum of squares RSS* = sum((e*)^2)
+    let rss_star: f64 = (0..n)
+        .map(|i| {
+            let e = transformed_residuals[(i, 0)];
+            e * e
+        })
+        .sum();
 
     let sigma2_ml = rss_star / (n as f64);
     let df = if n > p { (n - p) as f64 } else { 1.0 };
     let sigma2_unbiased = rss_star / df;
 
-    // 9. Log-Likelihood
-    // ln L = -0.5 * N * ln(2*pi) - 0.5 * N * ln(sigma2_ml) - 0.5 * log_det_v - 0.5 * N
+    // 7. Log-Likelihood
     let n_f64 = n as f64;
     let log_likelihood = -0.5 * n_f64 * (2.0 * std::f64::consts::PI).ln()
         - 0.5 * n_f64 * sigma2_ml.ln()
         - 0.5 * log_det_v
         - 0.5 * n_f64;
 
-    // 10. Covariance and Standard Errors of beta
-    let mut vcov_beta = Mat::zeros(p, p);
-    let mut se = vec![0.0; p];
-    for i in 0..p {
-        for j in 0..p {
-            vcov_beta[(i, j)] = inv_xtx[(i, j)] * sigma2_ml;
-        }
-        se[i] = vcov_beta[(i, i)].max(0.0).sqrt();
-    }
+    // 8. Covariance and Standard Errors of beta
+    let vcov_beta = &inv_xtx * faer::Scale(sigma2_ml);
+    let se: Vec<f64> = (0..p).map(|i| vcov_beta[(i, i)].max(0.0).sqrt()).collect();
 
     Ok(GlsResult {
         beta,

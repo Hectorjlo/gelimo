@@ -1,115 +1,109 @@
 //! Newick format parser module.
 
 use super::node::{Node, PhyloTree};
-use nom::{
-    bytes::complete::take_while1,
-    character::complete::{char, space0},
-    combinator::{map, opt},
-    multi::separated_list1,
-    number::complete::double,
-    sequence::{delimited, preceded, tuple},
-    IResult,
-};
 
-#[derive(Debug)]
-struct RawNode {
-    name: Option<String>,
-    branch_length: Option<f64>,
-    children: Vec<RawNode>,
-}
-
-fn parse_name(input: &str) -> IResult<&str, String> {
-    map(
-        take_while1(|c: char| !c.is_whitespace() && c != ':' && c != ',' && c != ')' && c != '(' && c != ';'),
-        |s: &str| s.to_string(),
-    )(input)
-}
-
-fn parse_branch_length(input: &str) -> IResult<&str, f64> {
-    preceded(char(':'), double)(input)
-}
-
-fn parse_node(input: &str) -> IResult<&str, RawNode> {
-    let (input, _) = space0(input)?;
-    if input.starts_with('(') {
-        // Internal node: ( child1, child2, ... ) [name] [:branch_length]
-        let (input, children) = delimited(
-            char('('),
-            separated_list1(char(','), parse_node),
-            char(')'),
-        )(input)?;
-        let (input, name) = opt(parse_name)(input)?;
-        let (input, branch_length) = opt(parse_branch_length)(input)?;
-        let (input, _) = space0(input)?;
-        Ok((
-            input,
-            RawNode {
-                name,
-                branch_length,
-                children,
-            },
-        ))
-    } else {
-        // Tip node: name [:branch_length]
-        let (input, (name, branch_length)) = tuple((opt(parse_name), opt(parse_branch_length)))(input)?;
-        let (input, _) = space0(input)?;
-        Ok((
-            input,
-            RawNode {
-                name,
-                branch_length,
-                children: Vec::new(),
-            },
-        ))
+fn parse_label_and_length(s: &str) -> Result<(Option<String>, Option<f64>), String> {
+    let trimmed = s.trim();
+    if trimmed.is_empty() {
+        return Ok((None, None));
     }
+    if let Some((name_part, len_part)) = trimmed.split_once(':') {
+        let name = (!name_part.trim().is_empty()).then(|| name_part.trim().to_string());
+        let bl = len_part
+            .trim()
+            .parse::<f64>()
+            .map_err(|e| format!("Invalid branch length '{}': {}", len_part, e))?;
+        Ok((name, Some(bl)))
+    } else {
+        Ok((Some(trimmed.to_string()), None))
+    }
+}
+
+fn parse_subtree(
+    input: &str,
+    parent: Option<usize>,
+    nodes: &mut Vec<Node>,
+    tips: &mut Vec<usize>,
+) -> Result<usize, String> {
+    let s = input.trim();
+    if s.is_empty() {
+        return Err("Empty Newick node".to_string());
+    }
+
+    let id = nodes.len();
+    if s.starts_with('(') {
+        let mut depth = 0usize;
+        let mut close_idx = None;
+        let mut split_positions = Vec::new();
+
+        for (i, ch) in s.char_indices() {
+            match ch {
+                '(' => depth += 1,
+                ')' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        close_idx = Some(i);
+                        break;
+                    }
+                }
+                ',' if depth == 1 => split_positions.push(i),
+                _ => {}
+            }
+        }
+
+        let close_pos = close_idx.ok_or_else(|| "Unmatched '(' in Newick string".to_string())?;
+        let inner = &s[1..close_pos];
+        let meta = &s[close_pos + 1..];
+        let (name, branch_length) = parse_label_and_length(meta)?;
+
+        nodes.push(Node {
+            id,
+            name,
+            branch_length,
+            children: Vec::new(),
+            parent,
+            is_tip: false,
+        });
+
+        let mut children = Vec::with_capacity(split_positions.len() + 1);
+        let mut start = 0;
+        for pos in split_positions {
+            let child_str = &inner[start..pos - 1];
+            children.push(parse_subtree(child_str, Some(id), nodes, tips)?);
+            start = pos;
+        }
+        children.push(parse_subtree(&inner[start..], Some(id), nodes, tips)?);
+        nodes[id].children = children;
+    } else {
+        if s.contains(['(', ')', ',', ';']) {
+            return Err(format!("Unexpected delimiter in tip '{}'", s));
+        }
+        let (name, branch_length) = parse_label_and_length(s)?;
+        nodes.push(Node {
+            id,
+            name,
+            branch_length,
+            children: Vec::new(),
+            parent,
+            is_tip: true,
+        });
+        tips.push(id);
+    }
+
+    Ok(id)
 }
 
 /// Parses a Newick format string into a `PhyloTree`.
 pub fn parse_newick(input: &str) -> Result<PhyloTree, String> {
-    let trimmed = input.trim().trim_end_matches(';');
-    let (remaining, raw_root) = parse_node(trimmed).map_err(|e| format!("Newick parse error: {:?}", e))?;
-
-    if !remaining.trim().is_empty() {
-        return Err(format!("Unexpected trailing characters: '{}'", remaining));
+    let trimmed = input.trim();
+    let body = trimmed.strip_suffix(';').unwrap_or(trimmed).trim();
+    if body.is_empty() {
+        return Err("Empty Newick tree".to_string());
     }
 
     let mut nodes = Vec::new();
     let mut tips = Vec::new();
-
-    fn build_nodes(
-        raw: RawNode,
-        parent: Option<usize>,
-        nodes: &mut Vec<Node>,
-        tips: &mut Vec<usize>,
-    ) -> usize {
-        let id = nodes.len();
-        let is_tip = raw.children.is_empty();
-
-        // Push temporary node
-        nodes.push(Node {
-            id,
-            name: raw.name,
-            branch_length: raw.branch_length,
-            children: Vec::new(),
-            parent,
-            is_tip,
-        });
-
-        if is_tip {
-            tips.push(id);
-        } else {
-            let child_ids: Vec<usize> = raw
-                .children
-                .into_iter()
-                .map(|child| build_nodes(child, Some(id), nodes, tips))
-                .collect();
-            nodes[id].children = child_ids;
-        }
-
-        id
-    }
-
-    let root = build_nodes(raw_root, None, &mut nodes, &mut tips);
+    let root = parse_subtree(body, None, &mut nodes, &mut tips)?;
 
     Ok(PhyloTree { nodes, root, tips })
 }

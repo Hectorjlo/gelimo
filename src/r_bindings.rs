@@ -8,8 +8,8 @@ use crate::pipeline::{run_pgls_pipeline, PglsConfig};
 /// Runs high-throughput parallel PGLS on OrthoFinder orthogroups from R.
 ///
 /// Returns an R data.frame with coefficients, p-values, FDR q-values, and Partial r effect sizes.
-// ponytail: zero-copy R data.frame generation directly from Rust results
 #[extendr]
+#[allow(clippy::too_many_arguments)]
 fn r_pgls_orthogroups(
     tree: String,
     data: String,
@@ -69,7 +69,7 @@ fn r_pgls_orthogroups(
         fuzzy_taxonomy: true,
     };
 
-    let summary = run_ortho_pipeline(&config).map_err(|e| extendr_api::Error::Other(e))?;
+    let summary = run_ortho_pipeline(&config).map_err(extendr_api::Error::Other)?;
 
     let mut og_ids = Vec::with_capacity(summary.all_results.len());
     let mut betas = Vec::with_capacity(summary.all_results.len());
@@ -114,14 +114,14 @@ fn r_pgls_orthogroups(
         Species_With_Gene = species_counts
     );
 
-    Ok(df.into())
+    Ok(df)
 }
 
 /// Fits a single PGLS model on comparative species traits from R.
 ///
 /// Returns an R list containing coefficients, R-squared, AIC, log-likelihood, and Pagel's lambda.
-// ponytail: structured R list model summary
 #[extendr]
+#[allow(clippy::too_many_arguments)]
 fn r_pgls_fit(
     tree: String,
     data: String,
@@ -153,7 +153,7 @@ fn r_pgls_fit(
         solver_mode,
     };
 
-    let summary = run_pgls_pipeline(&config).map_err(|e| extendr_api::Error::Other(e))?;
+    let summary = run_pgls_pipeline(&config).map_err(extendr_api::Error::Other)?;
 
     let mut param_names = vec!["(Intercept)".to_string()];
     param_names.extend(predictor_cols);
